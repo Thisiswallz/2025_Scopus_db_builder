@@ -1,0 +1,22 @@
+# Scopus Dataset Analysis Tool Requirements
+# 
+# This tool uses only Python standard library modules.
+# No external dependencies are required.
+#
+# Python version requirement: 3.6+
+#
+# Standard library modules used:
+# - csv (for CSV file reading)
+# - sys (for command line arguments)
+# - os (for file operations)
+# - collections (Counter, defaultdict)
+# - datetime (for timestamps)
+# - typing (for type hints)
+# - re (for regular expressions)
+# - shutil (for file copying)
+
+# Future optional dependencies for enhanced features:
+# pandas>=1.3.0          # For advanced data manipulation (optional)
+# matplotlib>=3.5.0      # For data visualization (optional)
+# seaborn>=0.11.0        # For statistical visualization (optional)
+# wordcloud>=1.8.0       # For keyword visualization (optional)

@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements*.txt
+include pyproject.toml
+recursive-include docs *.md *.rst
+recursive-include tests *.py *.csv
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
