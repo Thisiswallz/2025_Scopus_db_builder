@@ -12,7 +12,7 @@ setup(
     description="A tool for creating optimized SQLite databases from Scopus CSV exports",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/scopus-db",
+    url="https://github.com/Thisiswallz/2025_Scopus_db_builder",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",

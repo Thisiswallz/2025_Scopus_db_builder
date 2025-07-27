@@ -186,12 +186,19 @@ class OptimalScopusDatabase:
             )
         """)
         
-        # Citation relationships (structured)
+        # Citation relationships (structured with enhanced schema)
         cursor.execute("""
             CREATE TABLE paper_citations (
+                citation_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 citing_paper_id INTEGER,
                 reference_text TEXT,
                 reference_year INTEGER,
+                reference_authors TEXT,
+                reference_title TEXT,
+                reference_journal TEXT,
+                reference_volume TEXT,
+                reference_issue TEXT,
+                reference_pages TEXT,
                 position INTEGER,
                 cited_paper_id INTEGER, -- Optional: link to actual paper if found
                 citation_weight REAL DEFAULT 1.0,
@@ -247,7 +254,13 @@ class OptimalScopusDatabase:
             "CREATE INDEX IF NOT EXISTS idx_paper_keywords_type ON paper_keywords (keyword_type)",
             
             "CREATE INDEX IF NOT EXISTS idx_paper_institutions_paper ON paper_institutions (paper_id)",
-            "CREATE INDEX IF NOT EXISTS idx_paper_institutions_institution ON paper_institutions (institution_id)"
+            "CREATE INDEX IF NOT EXISTS idx_paper_institutions_institution ON paper_institutions (institution_id)",
+            
+            # Citation table indexes
+            "CREATE INDEX IF NOT EXISTS idx_paper_citations_citing ON paper_citations (citing_paper_id)",
+            "CREATE INDEX IF NOT EXISTS idx_paper_citations_year ON paper_citations (reference_year)",
+            "CREATE INDEX IF NOT EXISTS idx_paper_citations_journal ON paper_citations (reference_journal)",
+            "CREATE INDEX IF NOT EXISTS idx_paper_citations_authors ON paper_citations (reference_authors)"
         ]
         
         for index_sql in indexes:
@@ -714,9 +727,10 @@ class OptimalScopusDatabase:
         print("Funding data parsed and imported")
     
     def _parse_references_data(self, data: List[Dict]):
-        """Parse and import citation references."""
-        print("Parsing references data...")
+        """Parse and import citation references with structured data extraction."""
+        print("Parsing references data with enhanced structure...")
         cursor = self.conn.cursor()
+        
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
@@ -727,24 +741,176 @@ class OptimalScopusDatabase:
                 references = [r.strip() for r in str(references_text).split(';') if r.strip()]
                 
                 for ref_idx, reference in enumerate(references, 1):
-                    # Extract basic reference information
-                    ref_title = reference[:200]  # Limit title length
-                    ref_year = None
-                    
-                    # Try to extract year
-                    import re
-                    year_match = re.search(r'\b(19|20)\d{2}\b', reference)
-                    if year_match:
-                        ref_year = int(year_match.group())
+                    # Parse structured reference data
+                    parsed_ref = self._parse_single_reference(reference)
                     
                     cursor.execute("""
                         INSERT INTO paper_citations 
-                        (citing_paper_id, reference_text, reference_year, position)
-                        VALUES (?, ?, ?, ?)
-                    """, (paper_id, ref_title, ref_year, ref_idx))
+                        (citing_paper_id, reference_text, reference_year, reference_authors,
+                         reference_title, reference_journal, reference_volume, 
+                         reference_issue, reference_pages, position)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        paper_id, 
+                        reference[:500],  # Limit full text length
+                        parsed_ref['year'],
+                        parsed_ref['authors'],
+                        parsed_ref['title'],
+                        parsed_ref['journal'],
+                        parsed_ref['volume'],
+                        parsed_ref['issue'],
+                        parsed_ref['pages'],
+                        ref_idx
+                    ))
         
         self.conn.commit()
-        print("References data parsed and imported")
+        print("References data parsed and imported with structured extraction")
+    
+    def _parse_single_reference(self, reference: str) -> Dict:
+        """
+        Parse individual reference string into structured components.
+        
+        Expected format: "Authors, Title, Journal, Volume, Issue, pp. Pages, (Year)"
+        Uses a more robust approach to identify journal names and separate components.
+        """
+        import re
+        
+        result = {
+            'authors': None,
+            'title': None,
+            'journal': None,
+            'volume': None,
+            'issue': None,
+            'pages': None,
+            'year': None
+        }
+        
+        if not reference:
+            return result
+        
+        # Extract year first (usually in parentheses at the end)
+        year_match = re.search(r'\((\d{4})\)(?:\s*$)', reference)
+        if year_match:
+            result['year'] = int(year_match.group(1))
+            # Remove year from reference for further parsing
+            reference = reference[:year_match.start()].strip().rstrip(',').strip()
+        else:
+            # Try to find year without parentheses
+            year_match = re.search(r'\b(19|20)\d{2}\b', reference)
+            if year_match:
+                result['year'] = int(year_match.group())
+        
+        # Split by commas to get components
+        parts = [part.strip() for part in reference.split(',') if part.strip()]
+        
+        if len(parts) < 2:
+            return result
+        
+        # Known journal abbreviations and patterns (common in academic references)
+        journal_patterns = [
+            r'\bJ\b',  # Journal abbreviations like "J Med"
+            r'\bProc\b',  # Proceedings
+            r'\bNature\b', r'\bScience\b',  # Major journals
+            r'\bIEEE\b', r'\bACM\b',  # Tech journals
+            r'\bAnn\b', r'\bArch\b',  # Annals, Archives
+            r'\bBr\b.*\bJ\b',  # British Journal
+            r'\bAm\b.*\bJ\b',  # American Journal
+            r'\bInt\b.*\bJ\b',  # International Journal
+            r'\bEur\b.*\bJ\b',  # European Journal
+            r'\bSci\b.*\bRep\b',  # Scientific Reports
+            r'Surgery|Medicine|Engineering|Robotics|Manufacturing',
+            r'Transaction|Review|Letter'
+        ]
+        
+        # Find journal by looking for known patterns
+        journal_idx = None
+        for i in range(1, len(parts)):
+            part = parts[i]
+            part_lower = part.lower()
+            
+            # Skip if it's clearly numeric data
+            if parts[i].isdigit() or re.match(r'^pp\.|^\d+-\d+$', part):
+                continue
+                
+            # Check for journal patterns
+            for pattern in journal_patterns:
+                if re.search(pattern, part, re.IGNORECASE):
+                    journal_idx = i
+                    break
+            
+            if journal_idx is not None:
+                break
+        
+        # If no pattern match, use position-based heuristic
+        if journal_idx is None:
+            # Journal is usually the first substantial non-numeric text after position 1
+            for i in range(2, min(len(parts), 4)):  # Check positions 2-3 (likely journal positions)
+                part = parts[i].strip()
+                if (len(part) > 3 and 
+                    not part.isdigit() and 
+                    not re.match(r'^pp\.|^\d+$|^\d+-\d+$', part) and
+                    len(part.split()) >= 2):  # Journal names usually have multiple words
+                    journal_idx = i
+                    break
+        
+        # Parse based on identified journal position
+        if journal_idx is not None and journal_idx >= 2:
+            # Standard format: Author(s), Title, Journal, Volume, Issue, Pages
+            result['authors'] = parts[0]
+            result['title'] = ', '.join(parts[1:journal_idx])  # Everything between author and journal
+            result['journal'] = parts[journal_idx]
+            
+            # Process remaining parts for volume, issue, pages
+            remaining_parts = parts[journal_idx + 1:]
+            
+            for part in remaining_parts:
+                part = part.strip()
+                
+                # Pages (contains 'pp.' or number ranges)
+                if 'pp.' in part.lower():
+                    pages = re.sub(r'pp\.\s*', '', part, flags=re.IGNORECASE)
+                    result['pages'] = pages.strip()
+                elif re.match(r'^\d+-\d+$', part) and not result['pages']:
+                    result['pages'] = part
+                
+                # Volume (typically first standalone number)
+                elif part.isdigit() and not result['volume']:
+                    result['volume'] = part
+                
+                # Issue (second standalone number)
+                elif part.isdigit() and result['volume'] and not result['issue']:
+                    result['issue'] = part
+        
+        else:
+            # Fallback: simple parsing when journal can't be clearly identified
+            if len(parts) >= 3:
+                result['authors'] = parts[0]
+                result['title'] = parts[1]
+                result['journal'] = parts[2]
+                
+                # Look for numeric parts in remaining
+                for part in parts[3:]:
+                    if part.isdigit() and not result['volume']:
+                        result['volume'] = part
+                    elif part.isdigit() and result['volume'] and not result['issue']:
+                        result['issue'] = part
+                    elif 'pp.' in part.lower() or re.match(r'^\d+-\d+$', part):
+                        pages = re.sub(r'pp\.\s*', '', part, flags=re.IGNORECASE)
+                        result['pages'] = pages.strip()
+            else:
+                # Minimal parsing
+                result['authors'] = parts[0]
+                if len(parts) > 1:
+                    result['title'] = parts[1]
+        
+        # Clean up empty strings and normalize whitespace
+        for key in result:
+            if result[key] and isinstance(result[key], str):
+                result[key] = ' '.join(result[key].split())  # Normalize whitespace
+                if result[key] == '':
+                    result[key] = None
+        
+        return result
     
     def _parse_chemicals_data(self, data: List[Dict]):
         """Parse chemical substances and CAS numbers."""
@@ -936,7 +1102,8 @@ class OptimalScopusDatabase:
             ('keywords_master', 'Unique Keywords'),
             ('paper_authors', 'Paper-Author Relationships'),
             ('paper_keywords', 'Paper-Keyword Relationships'),
-            ('paper_institutions', 'Paper-Institution Relationships')
+            ('paper_institutions', 'Paper-Institution Relationships'),
+            ('paper_citations', 'Citation References')
         ]
         
         for table, label in tables:
