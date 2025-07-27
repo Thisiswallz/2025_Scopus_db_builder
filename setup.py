@@ -7,7 +7,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="scopus-db",
-    version="0.1.0",
+    version="0.2.0",
     author="Claude Code",
     description="A tool for creating optimized SQLite databases from Scopus CSV exports",
     long_description=long_description,
