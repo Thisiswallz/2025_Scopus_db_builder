@@ -151,6 +151,28 @@ data/scopus_exports/*/scopus_*.db
 data/scopus_exports/*/*.csv
 !data/scopus_exports/*/sample.csv
 
+# New folder structure patterns
+data/*/raw_scopus/*.csv
+data/*/output/
+data/export_*/
+raw_scopus/
+output/
+
+# Configuration files
+config.json
+config.local.json
+
+# CrossRef recovery logs
+*_crossref_recovery.log
+*_missing_doi_*.csv
+*_missing_doi_*.txt
+
+# Data quality reports
+*_data_quality_*.json
+*_data_quality_*.html
+*_data_quality_*.txt
+*_data_quality_*.csv
+
 # Temporary files
 *.tmp
 *.bak

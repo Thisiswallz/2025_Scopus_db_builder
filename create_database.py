@@ -32,10 +32,11 @@ from scopus_db import OptimalScopusDatabase
 
 def find_scopus_csv_files(directory_path: Path) -> list:
     """
-    HELPER FUNCTION: Find CSV files in a directory
+    HELPER FUNCTION: Find CSV files in a directory or raw_scopus subdirectory
     
     This function looks through a folder and finds all the CSV files that look like
-    Scopus data files. It's smart enough to skip temporary files and backup files.
+    Scopus data files. It checks both the main directory and the raw_scopus/ subfolder
+    for organized data structures.
     
     Args:
         directory_path: A Path object pointing to the folder to search
@@ -46,9 +47,18 @@ def find_scopus_csv_files(directory_path: Path) -> list:
     # Create an empty list to store the CSV files we find
     csv_files = []
     
-    # Look through all files in the directory that end with ".csv"
+    # Check if this is an organized export folder with raw_scopus/ subfolder
+    raw_scopus_dir = directory_path / "raw_scopus"
+    if raw_scopus_dir.exists() and raw_scopus_dir.is_dir():
+        print(f"📁 Found organized structure - looking in raw_scopus/ folder")
+        search_dir = raw_scopus_dir
+    else:
+        # Use the main directory if no raw_scopus/ folder exists
+        search_dir = directory_path
+    
+    # Look through all files in the search directory that end with ".csv"
     # The glob("*.csv") function finds all files ending in .csv
-    for csv_file in directory_path.glob("*.csv"):
+    for csv_file in search_dir.glob("*.csv"):
         
         # Skip files we don't want to process:
         # - Files starting with "~" (temporary files)
@@ -233,7 +243,12 @@ def main():
         print("💡 TIP: Use quotes around paths with spaces: 'my folder/file.csv'")
         sys.exit(1)
     
-    # STEP 4: Actually create the database!
+    # STEP 4: Load and display configuration
+    from scopus_db.config_loader import get_config
+    config = get_config()
+    config.print_configuration_summary()
+    
+    # STEP 5: Actually create the database!
     # This is where the magic happens - we have 3 phases:
     
     print("\n🚀 STARTING DATABASE CREATION PROCESS...")

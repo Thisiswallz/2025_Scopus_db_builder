@@ -477,6 +477,7 @@ class ScopusDataQualityFilter:
         self._save_exclusion_log()
         self._generate_user_friendly_report()
         self._generate_csv_export()
+        self._generate_missing_doi_report()  # New: specific report for missing DOIs
         self._generate_html_report()
         
         return filtered_data, self._generate_exclusion_report()
@@ -752,6 +753,189 @@ class ScopusDataQualityFilter:
                         writer.writerow(row_data)
                 
                 print(f"   📊 {category} exclusions CSV saved: {category_csv_path}")
+    
+    def _generate_missing_doi_report(self):
+        """Generate a specialized report for papers missing DOIs (unrecoverable)"""
+        
+        # Find all records that are missing DOIs and couldn't be recovered
+        missing_doi_records = []
+        for entry in self.exclusion_log:
+            if entry.get('category') == 'MISSING_DOI':
+                missing_doi_records.append(entry)
+        
+        if not missing_doi_records:
+            print(f"   📊 No missing DOI records found - all DOIs were present or recovered!")
+            return
+        
+        # Generate CSV report for missing DOI records
+        missing_doi_csv_path = self.log_path.with_suffix('.csv').with_name(
+            self.log_path.stem + '_missing_doi.csv'
+        )
+        
+        with open(missing_doi_csv_path, 'w', encoding='utf-8', newline='') as f:
+            import csv
+            
+            # Prepare headers for missing DOI report
+            headers = [
+                'row_index',
+                'title', 
+                'authors',
+                'year',
+                'source_title',
+                'volume',
+                'issue',
+                'page_start',
+                'page_end',
+                'pubmed_id',
+                'abstract',
+                'affiliations',
+                'crossref_attempted',
+                'recovery_failure_reason'
+            ]
+            
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            
+            # Write missing DOI records with troubleshooting info
+            for entry in missing_doi_records:
+                # Create troubleshooting analysis
+                pubmed_id = entry.get('pubmed_id', '').strip()
+                title = entry.get('title', '').strip()
+                source_title = entry.get('source_title', '').strip()
+                volume = entry.get('volume', '').strip()
+                year = entry.get('year', '').strip()
+                
+                # Determine why recovery failed
+                if pubmed_id:
+                    failure_reason = "Phase 1 (PubMed ID) failed - check PubMed ID validity"
+                elif source_title and (volume or year):
+                    failure_reason = "Phase 2a (Journal) failed - journal not found in CrossRef or low confidence match"
+                elif title and len(title) >= 10:
+                    failure_reason = "Phase 2b (Title) failed - title search returned no matches or low confidence"
+                elif title and len(title) < 10:
+                    failure_reason = "Phase 2b skipped - title too short for reliable matching"
+                else:
+                    failure_reason = "Insufficient metadata for any recovery phase"
+                
+                crossref_attempted = "Yes" if self.enable_crossref_recovery else "No - CrossRef disabled"
+                
+                row_data = {
+                    'row_index': entry.get('row_index', ''),
+                    'title': title[:100] + ('...' if len(title) > 100 else ''),
+                    'authors': entry.get('authors', '')[:50] + ('...' if len(entry.get('authors', '')) > 50 else ''),
+                    'year': year,
+                    'source_title': source_title[:30] + ('...' if len(source_title) > 30 else ''),
+                    'volume': volume,
+                    'issue': entry.get('issue', ''),
+                    'page_start': entry.get('page_start', ''),
+                    'page_end': entry.get('page_end', ''),
+                    'pubmed_id': pubmed_id,
+                    'abstract': entry.get('abstract', '')[:100] + ('...' if len(entry.get('abstract', '')) > 100 else ''),
+                    'affiliations': entry.get('affiliations', '')[:100] + ('...' if len(entry.get('affiliations', '')) > 100 else ''),
+                    'crossref_attempted': crossref_attempted,
+                    'recovery_failure_reason': failure_reason
+                }
+                
+                writer.writerow(row_data)
+        
+        # Generate text summary for missing DOIs
+        missing_doi_txt_path = self.log_path.with_suffix('.txt').with_name(
+            self.log_path.stem + '_missing_doi_analysis.txt'
+        )
+        
+        with open(missing_doi_txt_path, 'w', encoding='utf-8') as f:
+            f.write("MISSING DOI ANALYSIS REPORT\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}\n\n")
+            
+            f.write(f"📊 MISSING DOI SUMMARY\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Total records missing DOIs: {len(missing_doi_records):,}\n")
+            
+            if self.enable_crossref_recovery:
+                recovery_stats = self.stats.get("crossref_recovery_stats", {})
+                f.write(f"CrossRef recovery attempted: YES\n")
+                f.write(f"Recovery attempts made: {recovery_stats.get('attempted', 0):,}\n")
+                f.write(f"Successful recoveries: {recovery_stats.get('successful', 0):,}\n")
+                failed_recoveries = recovery_stats.get('attempted', 0) - recovery_stats.get('successful', 0)
+                f.write(f"Failed recoveries: {failed_recoveries:,}\n\n")
+            else:
+                f.write(f"CrossRef recovery attempted: NO\n")
+                f.write(f"Recommendation: Enable CrossRef recovery to attempt DOI recovery\n\n")
+            
+            # Analyze failure patterns
+            f.write(f"📋 FAILURE PATTERN ANALYSIS\n")
+            f.write("-" * 30 + "\n")
+            
+            failure_patterns = {}
+            has_pubmed = 0
+            has_journal_info = 0
+            has_title_only = 0
+            insufficient_data = 0
+            
+            for entry in missing_doi_records:
+                pubmed_id = entry.get('pubmed_id', '').strip()
+                title = entry.get('title', '').strip()
+                source_title = entry.get('source_title', '').strip()
+                volume = entry.get('volume', '').strip()
+                year = entry.get('year', '').strip()
+                
+                if pubmed_id:
+                    has_pubmed += 1
+                elif source_title and (volume or year):
+                    has_journal_info += 1
+                elif title and len(title) >= 10:
+                    has_title_only += 1
+                else:
+                    insufficient_data += 1
+            
+            f.write(f"Records with PubMed IDs: {has_pubmed:,} (Phase 1 recovery possible)\n")
+            f.write(f"Records with journal details: {has_journal_info:,} (Phase 2a recovery possible)\n")
+            f.write(f"Records with titles only: {has_title_only:,} (Phase 2b recovery possible)\n")
+            f.write(f"Records with insufficient data: {insufficient_data:,} (No recovery possible)\n\n")
+            
+            # Recommendations
+            f.write(f"🔧 TROUBLESHOOTING RECOMMENDATIONS\n")
+            f.write("-" * 30 + "\n")
+            
+            if not self.enable_crossref_recovery:
+                f.write(f"1. ENABLE CROSSREF RECOVERY\n")
+                f.write(f"   - Add your email to config.json crossref.email field\n")
+                f.write(f"   - Set crossref.enabled to true\n")
+                f.write(f"   - This could recover up to {has_pubmed + has_journal_info + has_title_only:,} DOIs\n\n")
+            
+            if has_pubmed > 0:
+                f.write(f"2. PUBMED ID ISSUES ({has_pubmed:,} records)\n")
+                f.write(f"   - Check if PubMed IDs are valid and current\n")
+                f.write(f"   - Some PubMed IDs may not be indexed in CrossRef\n")
+                f.write(f"   - Consider manual verification of PubMed IDs\n\n")
+            
+            if has_journal_info > 0:
+                f.write(f"3. JOURNAL MATCHING ISSUES ({has_journal_info:,} records)\n")
+                f.write(f"   - Journal names may not match CrossRef database\n")
+                f.write(f"   - Volume/issue information may be incorrect\n")
+                f.write(f"   - Consider adjusting confidence thresholds in config\n\n")
+            
+            if has_title_only > 0:
+                f.write(f"4. TITLE MATCHING ISSUES ({has_title_only:,} records)\n")
+                f.write(f"   - Titles may be too generic or have variations\n")
+                f.write(f"   - Author information may help improve matching\n")
+                f.write(f"   - Consider manual DOI lookup for high-value papers\n\n")
+            
+            if insufficient_data > 0:
+                f.write(f"5. INSUFFICIENT METADATA ({insufficient_data:,} records)\n")
+                f.write(f"   - These records lack basic identifiers for recovery\n")
+                f.write(f"   - Review Scopus export settings to include more fields\n")
+                f.write(f"   - Consider excluding if not critical for research\n\n")
+            
+            f.write(f"📁 OUTPUT FILES\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Detailed CSV: {missing_doi_csv_path.name}\n")
+            f.write(f"Analysis report: {missing_doi_txt_path.name}\n")
+            f.write(f"Use these files to manually investigate missing DOI issues\n")
+        
+        print(f"   📊 Missing DOI analysis saved: {missing_doi_txt_path}")
+        print(f"   📊 Missing DOI CSV saved: {missing_doi_csv_path}")
     
     def _generate_html_report(self):
         """Generate an interactive HTML report with visualizations"""

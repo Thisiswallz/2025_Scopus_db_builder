@@ -4,11 +4,15 @@ A professional Python package for creating and validating optimized SQLite datab
 
 ## Features
 
+- **CrossRef DOI Recovery**: Automatic multi-phase DOI recovery for papers missing DOIs
 - **CLI Commands**: Simple command-line interface for database creation and validation
 - **Python API**: Clean programmatic interface for external project integration
 - **Database Validation**: Comprehensive integrity checking against original CSV data
 - **Pure Python**: No external dependencies - uses only standard library
 - **Research-Ready**: Optimized SQLite schema with proper relationships and indexing
+- **Configuration System**: Flexible JSON-based configuration for CrossRef and processing options
+- **Organized Output**: Structured folder system with raw data, outputs, and detailed reports
+- **Missing DOI Reports**: Specialized troubleshooting reports for unrecovered DOIs
 - **GitHub Installation**: Easy installation directly from GitHub repository
 
 ## Installation
@@ -42,8 +46,11 @@ pip install -e .
 After installation, use the `scopus-db` command globally:
 
 ```bash
-# Create database from Scopus CSV export
+# Create database from Scopus CSV export (with automatic DOI recovery)
 scopus-db create data/my_scopus_export.csv
+
+# Create database with custom configuration
+scopus-db create data/my_scopus_export.csv --config config.json
 
 # Validate database integrity against original CSV
 scopus-db check my_database.db --csv-file data/my_scopus_export.csv
@@ -52,6 +59,28 @@ scopus-db check my_database.db --csv-file data/my_scopus_export.csv
 scopus-db --help
 scopus-db create --help
 scopus-db check --help
+```
+
+### Configuration Setup (Optional)
+
+Create a `config.json` file to enable CrossRef DOI recovery:
+
+```json
+{
+  "crossref": {
+    "enabled": true,
+    "email": "your.email@university.edu",
+    "confidence_thresholds": {
+      "phase1_pubmed": 0.8,
+      "phase2a_journal": 0.75,
+      "phase2b_title": 0.65
+    }
+  },
+  "processing": {
+    "enable_data_quality_filter": true,
+    "folder_structure": "organized"
+  }
+}
 ```
 
 ### Python API Usage
@@ -76,6 +105,33 @@ print(f"Papers: {info['papers']}")
 print(f"Authors: {info['authors']}")
 print(f"File size: {info['file_size_mb']} MB")
 ```
+
+## CrossRef DOI Recovery
+
+The system includes automatic DOI recovery for papers missing DOIs in the Scopus export:
+
+### Multi-Phase Recovery Pipeline
+1. **Phase 1**: PubMed ID-based lookup (85-95% success rate)
+2. **Phase 2a**: Journal metadata matching (40-60% success rate)
+3. **Phase 2b**: Title fuzzy matching (20-40% success rate)
+
+### Configuration
+Enable CrossRef recovery in your `config.json`:
+```json
+{
+  "crossref": {
+    "enabled": true,
+    "email": "your.email@university.edu"
+  }
+}
+```
+
+### Missing DOI Reports
+For papers where DOI recovery fails, the system generates:
+- **Analysis Report**: `*_missing_doi_analysis.txt` - Troubleshooting recommendations
+- **CSV Export**: `*_missing_doi.csv` - Detailed data for manual investigation
+
+See `docs/MISSING_DOI_TROUBLESHOOTING.md` for detailed troubleshooting guide.
 
 ## Integration into Other Projects
 
@@ -386,21 +442,53 @@ Data quality filtering is always enabled in the standard scripts to ensure resea
 
 ## Database Output Structure
 
-Generated databases are automatically placed in the same directory as the source CSV:
+### Organized Folder Structure (NEW)
+
+The system now creates an organized folder structure for better data management:
+
+```
+data/export_1/
+├── raw_scopus/
+│   └── scopus.csv                                      # Original Scopus data
+├── output/
+│   ├── data_quality_exclusions_YYYYMMDD_HHMMSS.json   # Exclusion details
+│   ├── data_quality_exclusions_YYYYMMDD_HHMMSS.html   # Visual report
+│   ├── data_quality_exclusions_YYYYMMDD_HHMMSS.txt    # Human-readable summary
+│   ├── data_quality_exclusions_YYYYMMDD_HHMMSS.csv    # Excluded records CSV
+│   ├── data_quality_exclusions_YYYYMMDD_HHMMSS_missing_doi.csv         # Missing DOI details
+│   └── data_quality_exclusions_YYYYMMDD_HHMMSS_missing_doi_analysis.txt # DOI troubleshooting
+└── export_1_research_optimized_YYYYMMDD_HHMMSS.db     # Generated database
+```
+
+### Legacy Structure (if organized folders disabled)
 
 ```
 data/scopus_exports/export_1/
-├── scopus.csv                                           # Original Scopus data
-├── scopus_research_optimized_YYYYMMDD_HHMMSS.db        # Generated database
-└── data_quality_exclusion_log_YYYYMMDD_HHMMSS.json     # Filtering log (if enabled)
+├── scopus.csv                                          # Original Scopus data
+├── scopus_research_optimized_YYYYMMDD_HHMMSS.db       # Generated database
+└── data_quality_exclusion_log_YYYYMMDD_HHMMSS.json    # Filtering log
 ```
 
 ### Database Statistics (5,000 paper dataset)
 - **Papers**: 5,000 research articles with enhanced metrics
+- **DOI Recovery**: 30-50% of missing DOIs automatically recovered
 - **Authors**: 22,648 unique authors with career analytics  
 - **Institutions**: 6,870 institutions with collaboration metrics
 - **Keywords**: 32,297 keywords with TF-IDF scoring
 - **File Size**: ~62 MB (40% reduction through optimization)
+- **Reports**: Comprehensive data quality and missing DOI analysis
+
+## Architecture Overview
+
+### Zero-Dependency Architecture
+The system maintains a zero-dependency approach using only Python's standard library. This design choice eliminates dependency management issues while providing sophisticated features like CrossRef integration.
+
+### Multi-Phase Processing Pipeline
+1. **Entity Normalization**: Extract and normalize authors, institutions, keywords
+2. **Complex Data Parsing**: Parse funding, citations, chemicals, trade names
+3. **CrossRef DOI Recovery**: Multi-phase DOI recovery for missing identifiers
+4. **Relationship Optimization**: Build optimized relationships with TF-IDF scoring
+5. **Analytics Pre-computation**: Generate collaboration networks and trend analyses
 
 ## Requirements
 

@@ -1,0 +1,74 @@
+{
+  "_comment": "📋 EXAMPLE CONFIGURATION FILE - Copy to config.json and customize",
+  "_version": "1.0",
+  "_instructions": "1. Copy this file to 'config.json', 2. Replace 'your.email@university.edu' with your real email, 3. Adjust other settings as needed",
+  
+  "crossref": {
+    "_description": "🔗 CrossRef DOI Recovery Settings",
+    "enabled": true,
+    "email": "your.email@university.edu",
+    "skip_confirmation": true,
+    "rate_limit_requests_per_second": 45,
+    "confidence_thresholds": {
+      "_note": "Minimum confidence scores for accepting recovered DOIs",
+      "phase1_pubmed": 0.8,
+      "phase2a_journal": 0.75,
+      "phase2b_title": 0.65
+    },
+    "timeout_seconds": 30,
+    "retry_attempts": 3
+  },
+  
+  "data_quality": {
+    "_description": "🔍 Data Quality Filtering Settings",
+    "filtering_enabled": true,
+    "generate_reports": true,
+    "export_excluded_records": true,
+    "quality_criteria": {
+      "_note": "Set to false to allow records missing these fields",
+      "require_authors": true,
+      "require_author_ids": true,
+      "require_title": true,
+      "require_year": true,
+      "require_doi": false,
+      "require_affiliations": true,
+      "require_abstract": true
+    }
+  },
+  
+  "database": {
+    "_description": "🗄️ Database Creation Settings",
+    "include_analytics_tables": true,
+    "create_indexes": true,
+    "normalize_entities": true,
+    "compute_collaborations": true,
+    "compute_keyword_cooccurrence": true,
+    "include_recovery_metadata": true
+  },
+  
+  "output": {
+    "_description": "📊 Output File Generation Settings",
+    "generate_html_report": true,
+    "generate_csv_export": true,
+    "generate_text_report": true,
+    "generate_json_log": true,
+    "verbose_logging": true,
+    "timestamp_files": true
+  },
+  
+  "performance": {
+    "_description": "⚡ Performance & Memory Settings",
+    "batch_size": 1000,
+    "memory_limit_mb": 2048,
+    "parallel_processing": false,
+    "cache_api_responses": true
+  },
+  
+  "file_handling": {
+    "_description": "📁 CSV File Processing Settings",
+    "encoding": "utf-8-sig",
+    "skip_empty_rows": true,
+    "handle_malformed_csv": true,
+    "backup_original_files": false
+  }
+}

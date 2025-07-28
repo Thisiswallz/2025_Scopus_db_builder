@@ -41,23 +41,53 @@ class OptimalScopusDatabase:
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        # Determine the base directory and organize files properly
         if self.multi_csv_mode:
-            # For multi-CSV mode, use directory name
-            self.db_path = self.csv_path / f"{self.csv_path.name}_combined_research_optimized_{timestamp}.db"
+            # For multi-CSV mode (directory input)
+            base_dir = self.csv_path  # This is the export directory (e.g., data/export_1)
+            db_name = f"{self.csv_path.name}_combined_research_optimized_{timestamp}.db"
         else:
-            # For single CSV mode, use CSV file name
-            self.db_path = self.csv_path.parent / f"{self.csv_path.stem}_research_optimized_{timestamp}.db"
+            # For single CSV mode
+            # Check if CSV is in raw_scopus/ subfolder (organized structure)
+            if self.csv_path.parent.name == "raw_scopus":
+                base_dir = self.csv_path.parent.parent  # Go up to export directory
+                db_name = f"{base_dir.name}_research_optimized_{timestamp}.db"
+            else:
+                # CSV is in the main directory (legacy structure)
+                base_dir = self.csv_path.parent
+                db_name = f"{self.csv_path.stem}_research_optimized_{timestamp}.db"
         
-        # Initialize data quality filter
+        # Database goes in the main export directory
+        self.db_path = base_dir / db_name
+        
+        # Output files go in the output/ subfolder
+        output_dir = base_dir / "output"
+        output_dir.mkdir(exist_ok=True)  # Create output directory if it doesn't exist
+        
+        # Quality filter logs go in output/ folder
         if self.multi_csv_mode:
-            filter_log_path = self.csv_path / f"data_quality_exclusions_combined_{timestamp}.json"
+            filter_log_path = output_dir / f"data_quality_exclusions_combined_{timestamp}.json"
         else:
-            filter_log_path = self.csv_path.parent / f"data_quality_exclusions_{timestamp}.json"
+            filter_log_path = output_dir / f"data_quality_exclusions_{timestamp}.json"
             
+        # Load configuration for CrossRef and other settings
+        from ..config_loader import get_config
+        config = get_config()
+        
+        # Get CrossRef configuration
+        crossref_config = config.get_crossref_config()
+        data_quality_config = config.get_data_quality_config()
+        
         self.data_filter = ScopusDataQualityFilter(
-            enable_filtering=enable_data_filtering,
-            log_path=str(filter_log_path)
+            enable_filtering=enable_data_filtering and data_quality_config['filtering_enabled'],
+            log_path=str(filter_log_path),
+            enable_crossref_recovery=config.is_crossref_enabled(),
+            crossref_email=config.get_crossref_email(),
+            skip_confirmation=crossref_config['skip_confirmation']
         )
+        
+        # Store config for use in database creation
+        self.config = config
         
         # Entity registries for normalization
         self.authors_registry = {}      # scopus_id -> author_id
