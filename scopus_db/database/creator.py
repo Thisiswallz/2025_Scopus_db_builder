@@ -12,7 +12,8 @@ import os
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
+from ..data_quality_filter import ScopusDataQualityFilter
 
 
 class OptimalScopusDatabase:
@@ -25,16 +26,38 @@ class OptimalScopusDatabase:
     3. Analytics layer with materialized collaboration networks
     """
     
-    def __init__(self, csv_path: str):
+    def __init__(self, csv_path: str, enable_data_filtering: bool = True, csv_files: List = None):
         """
         Initialize optimal database creator.
         
         Args:
-            csv_path: Path to Scopus CSV export file
+            csv_path: Path to Scopus CSV export file or directory
+            enable_data_filtering: Whether to apply data quality filtering
+            csv_files: List of CSV files (for multi-CSV mode)
         """
         self.csv_path = Path(csv_path)
+        self.csv_files = csv_files or []
+        self.multi_csv_mode = bool(csv_files)
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.db_path = self.csv_path.parent / f"{self.csv_path.stem}_research_optimized_{timestamp}.db"
+        
+        if self.multi_csv_mode:
+            # For multi-CSV mode, use directory name
+            self.db_path = self.csv_path / f"{self.csv_path.name}_combined_research_optimized_{timestamp}.db"
+        else:
+            # For single CSV mode, use CSV file name
+            self.db_path = self.csv_path.parent / f"{self.csv_path.stem}_research_optimized_{timestamp}.db"
+        
+        # Initialize data quality filter
+        if self.multi_csv_mode:
+            filter_log_path = self.csv_path / f"data_quality_exclusions_combined_{timestamp}.json"
+        else:
+            filter_log_path = self.csv_path.parent / f"data_quality_exclusions_{timestamp}.json"
+            
+        self.data_filter = ScopusDataQualityFilter(
+            enable_filtering=enable_data_filtering,
+            log_path=str(filter_log_path)
+        )
         
         # Entity registries for normalization
         self.authors_registry = {}      # scopus_id -> author_id
@@ -49,6 +72,9 @@ class OptimalScopusDatabase:
         # Statistics tracking
         self.stats = {
             "papers_processed": 0,
+            "papers_filtered_out": 0,
+            "duplicates_removed": 0,
+            "csv_files_processed": 0,
             "authors_normalized": 0,
             "institutions_normalized": 0,
             "keywords_normalized": 0,
@@ -311,17 +337,125 @@ class OptimalScopusDatabase:
         for index_sql in indexes:
             cursor.execute(index_sql)
     
+    def _deduplicate_records(self, all_records: List[Dict[str, str]], file_sources: List[str]) -> Tuple[List[Dict[str, str]], int]:
+        """
+        Remove duplicate records across multiple CSV files.
+        
+        Uses DOI as primary identifier, with Scopus Author IDs as secondary identifier.
+        
+        Args:
+            all_records: Combined records from all CSV files
+            file_sources: List indicating which file each record came from
+            
+        Returns:
+            Tuple of (unique_records, duplicate_count)
+        """
+        seen_dois = set()
+        seen_author_id_combos = set()
+        unique_records = []
+        duplicate_count = 0
+        unique_sources = []
+        
+        print(f"\n🔍 DEDUPLICATION ANALYSIS")
+        print(f"   Total records before deduplication: {len(all_records):,}")
+        
+        for i, record in enumerate(all_records):
+            doi = record.get('DOI', '').strip()
+            author_ids = record.get('Author(s) ID', '').strip()
+            title = record.get('Title', '').strip()
+            year = record.get('Year', '').strip()
+            
+            is_duplicate = False
+            
+            # Primary deduplication: DOI matching
+            if doi and doi in seen_dois:
+                is_duplicate = True
+                duplicate_count += 1
+                
+            # Secondary deduplication: Scopus Author IDs + Title + Year
+            elif author_ids and title and year:
+                # Create a unique identifier from author IDs, title, and year
+                author_id_combo = f"{author_ids}:{title.lower()}:{year}"
+                if author_id_combo in seen_author_id_combos:
+                    is_duplicate = True
+                    duplicate_count += 1
+                else:
+                    seen_author_id_combos.add(author_id_combo)
+            
+            # Add to unique set if not duplicate
+            if not is_duplicate:
+                if doi:
+                    seen_dois.add(doi)
+                if author_ids and title and year:
+                    author_id_combo = f"{author_ids}:{title.lower()}:{year}"
+                    seen_author_id_combos.add(author_id_combo)
+                unique_records.append(record)
+                unique_sources.append(file_sources[i])
+        
+        print(f"   ✅ Unique records after deduplication: {len(unique_records):,}")
+        print(f"   ❌ Duplicate records removed: {duplicate_count:,}")
+        if duplicate_count > 0:
+            print(f"   📊 Deduplication rate: {duplicate_count/len(all_records)*100:.1f}%")
+        
+        return unique_records, duplicate_count
+    
     def process_csv_to_optimal_db(self):
-        """Parse and import Scopus CSV data into structured database."""
-        print(f"Loading Scopus CSV: {self.csv_path}")
+        """Parse and import Scopus CSV data into structured database with quality filtering."""
         
-        # Load data using standard library CSV
-        data = []
-        with open(self.csv_path, 'r', encoding='utf-8-sig') as file:
-            reader = csv.DictReader(file)
-            data = list(reader)
+        if self.multi_csv_mode:
+            # Multi-CSV processing
+            print(f"🔄 Loading Multiple CSV files from: {self.csv_path}")
+            raw_data = []
+            file_sources = []
+            
+            for csv_file in self.csv_files:
+                print(f"   📄 Loading: {csv_file.name}")
+                try:
+                    with open(csv_file, 'r', encoding='utf-8-sig') as file:
+                        reader = csv.DictReader(file)
+                        file_data = list(reader)
+                        raw_data.extend(file_data)
+                        # Track which file each record came from
+                        file_sources.extend([csv_file.name] * len(file_data))
+                        print(f"      Records loaded: {len(file_data):,}")
+                except Exception as e:
+                    print(f"      ❌ Error loading {csv_file.name}: {e}")
+                    continue
+            
+            self.stats["csv_files_processed"] = len(self.csv_files)
+            print(f"\n📊 MULTI-CSV SUMMARY:")
+            print(f"   CSV files processed: {self.stats['csv_files_processed']}")
+            print(f"   Total records loaded: {len(raw_data):,}")
+            
+            # Deduplicate records across files
+            if len(raw_data) > 0:
+                raw_data, duplicates_removed = self._deduplicate_records(raw_data, file_sources)
+                self.stats["duplicates_removed"] = duplicates_removed
+            
+        else:
+            # Single CSV processing (original behavior)
+            print(f"📄 Loading Single CSV: {self.csv_path}")
+            raw_data = []
+            with open(self.csv_path, 'r', encoding='utf-8-sig') as file:
+                reader = csv.DictReader(file)
+                raw_data = list(reader)
+            
+            print(f"   Records loaded: {len(raw_data):,}")
+            self.stats["csv_files_processed"] = 1
         
-        print(f"Loaded {len(data)} papers from Scopus export")
+        # Apply data quality filtering
+        data, filter_report = self.data_filter.filter_csv_data(raw_data)
+        self.stats["papers_filtered_out"] = filter_report["summary"]["excluded_records"]
+        
+        # Print filtering summary
+        self.data_filter.print_exclusion_summary()
+        
+        print(f"\n📊 FINAL DATASET SUMMARY:")
+        print(f"   Total records in CSV: {len(raw_data):,}")
+        print(f"   Records after filtering: {len(data):,}")
+        print(f"   Quality improvement: {filter_report['summary']['quality_improvement']}")
+        print(f"   Detailed exclusion log: {filter_report['log_file']}")
+        print(f"\nProceeding with {len(data)} high-quality research papers...")
         
         # Phase 1: Extract and normalize entities
         print("\n=== Phase 1: Entity Normalization ===")
@@ -349,7 +483,7 @@ class OptimalScopusDatabase:
         cursor = self.conn.cursor()
         self._create_basic_indexes(cursor)
         
-        print(f"\n✅ Pure data database created: {self.db_path}")
+        print(f"\n✅ High-quality research database created: {self.db_path}")
         print(f"Database size: {self.db_path.stat().st_size / (1024*1024):.1f} MB")
         self._print_statistics()
     
@@ -770,8 +904,11 @@ class OptimalScopusDatabase:
         """
         Parse individual reference string into structured components.
         
-        Expected format: "Authors, Title, Journal, Volume, Issue, pp. Pages, (Year)"
-        Uses a more robust approach to identify journal names and separate components.
+        Handles multiple reference formats:
+        - Journal articles: "Authors, Title, Journal, Volume, Issue, pp. Pages, (Year)"
+        - Books: "Authors, Title, (Year)" or "Authors, Title, Publisher, (Year)"
+        - Standards: "Standard Name, Standard Number, (Year)"
+        - Web documents: "Title [WWW Document], (Year)"
         """
         import re
         
@@ -785,8 +922,22 @@ class OptimalScopusDatabase:
             'year': None
         }
         
-        if not reference:
+        if not reference or len(reference.strip()) < 3:
             return result
+        
+        # Handle very short references (data quality issues)
+        if len(reference.strip()) < 10:
+            # Try to extract year if it's just a year
+            if re.match(r'^\d{4}$', reference.strip()):
+                result['year'] = int(reference.strip())
+            # For very short text, put it in title
+            elif not reference.strip().isdigit():
+                result['title'] = reference.strip()
+            return result
+        
+        # Handle truncated references starting with comma
+        if reference.strip().startswith(','):
+            reference = reference.strip()[1:].strip()
         
         # Extract year first (usually in parentheses at the end)
         year_match = re.search(r'\((\d{4})\)(?:\s*$)', reference)
@@ -800,10 +951,40 @@ class OptimalScopusDatabase:
             if year_match:
                 result['year'] = int(year_match.group())
         
+        # Handle web documents
+        if '[WWW Document]' in reference:
+            # Remove [WWW Document] and treat title as everything before it
+            title_part = reference.replace('[WWW Document]', '').strip().rstrip(',').strip()
+            result['title'] = title_part
+            result['journal'] = 'Web Document'
+            return result
+        
+        # Handle references without commas (books, standards, incomplete)
+        if ',' not in reference:
+            # If it looks like a standard title or incomplete reference
+            if any(word in reference.lower() for word in ['standard', 'specification', 'guideline', 'principles', 'terminology']):
+                result['title'] = reference
+                result['journal'] = 'Standard/Document'
+            elif len(reference.split()) >= 3:  # Reasonable length for a title
+                result['title'] = reference
+            return result
+        
         # Split by commas to get components
         parts = [part.strip() for part in reference.split(',') if part.strip()]
         
         if len(parts) < 2:
+            # Single part, treat as title
+            result['title'] = reference
+            return result
+        
+        # Detect if this is a standards document
+        if any(keyword in ' '.join(parts).lower() for keyword in 
+               ['iso ', 'astm ', 'standard', 'specification', 'guideline']):
+            # Standards format: "Standard Name, Number, (Year)"
+            result['title'] = ', '.join(parts[:-1]) if len(parts) > 1 else parts[0]
+            result['journal'] = 'Standard'
+            if len(parts) >= 2 and parts[-1].isdigit():
+                result['volume'] = parts[-1]  # Standard number
             return result
         
         # Known journal abbreviations and patterns (common in academic references)
@@ -819,16 +1000,15 @@ class OptimalScopusDatabase:
             r'\bEur\b.*\bJ\b',  # European Journal
             r'\bSci\b.*\bRep\b',  # Scientific Reports
             r'Surgery|Medicine|Engineering|Robotics|Manufacturing',
-            r'Transaction|Review|Letter'
+            r'Transaction|Review|Letter|HNO|BMC'
         ]
         
         # Find journal by looking for known patterns
         journal_idx = None
         for i in range(1, len(parts)):
             part = parts[i]
-            part_lower = part.lower()
             
-            # Skip if it's clearly numeric data
+            # Skip if it's clearly numeric data or pages
             if parts[i].isdigit() or re.match(r'^pp\.|^\d+-\d+$', part):
                 continue
                 
@@ -841,17 +1021,21 @@ class OptimalScopusDatabase:
             if journal_idx is not None:
                 break
         
-        # If no pattern match, use position-based heuristic
+        # If no pattern match, use position and content-based heuristic
         if journal_idx is None:
-            # Journal is usually the first substantial non-numeric text after position 1
-            for i in range(2, min(len(parts), 4)):  # Check positions 2-3 (likely journal positions)
+            # Journal is usually a short abbreviation or contains specific words after position 1
+            for i in range(2, min(len(parts), 5)):  # Check positions 2-4
                 part = parts[i].strip()
-                if (len(part) > 3 and 
+                if (len(part) > 1 and 
                     not part.isdigit() and 
-                    not re.match(r'^pp\.|^\d+$|^\d+-\d+$', part) and
-                    len(part.split()) >= 2):  # Journal names usually have multiple words
-                    journal_idx = i
-                    break
+                    not re.match(r'^pp\.|^\d+$|^\d+-\d+$', part)):
+                    
+                    # Prefer shorter parts (journal abbreviations) or those with journal-like words
+                    if (len(part) <= 15 or  # Short abbreviations
+                        len(part.split()) >= 2 or  # Multi-word journal names
+                        any(word in part.lower() for word in ['journal', 'proc', 'lett', 'rev'])):
+                        journal_idx = i
+                        break
         
         # Parse based on identified journal position
         if journal_idx is not None and journal_idx >= 2:
@@ -882,11 +1066,22 @@ class OptimalScopusDatabase:
                     result['issue'] = part
         
         else:
-            # Fallback: simple parsing when journal can't be clearly identified
+            # Fallback parsing for books and other formats
             if len(parts) >= 3:
                 result['authors'] = parts[0]
                 result['title'] = parts[1]
-                result['journal'] = parts[2]
+                
+                # Check if third part looks like a journal or publisher
+                third_part = parts[2]
+                if (third_part.isdigit() or 
+                    len(third_part) < 3 or
+                    any(word in third_part.lower() for word in ['press', 'publisher', 'books', 'edition'])):
+                    # Likely a book with volume/edition or publisher
+                    result['journal'] = 'Book/Monograph'
+                    if third_part.isdigit():
+                        result['volume'] = third_part
+                else:
+                    result['journal'] = third_part
                 
                 # Look for numeric parts in remaining
                 for part in parts[3:]:
@@ -897,11 +1092,19 @@ class OptimalScopusDatabase:
                     elif 'pp.' in part.lower() or re.match(r'^\d+-\d+$', part):
                         pages = re.sub(r'pp\.\s*', '', part, flags=re.IGNORECASE)
                         result['pages'] = pages.strip()
-            else:
-                # Minimal parsing
+            
+            elif len(parts) == 2:
+                # Book format: Author, Title
                 result['authors'] = parts[0]
-                if len(parts) > 1:
-                    result['title'] = parts[1]
+                result['title'] = parts[1]
+                result['journal'] = 'Book/Monograph'
+            
+            else:
+                # Single substantial part
+                if len(parts[0]) > 10:
+                    result['title'] = parts[0]
+                else:
+                    result['authors'] = parts[0]
         
         # Clean up empty strings and normalize whitespace
         for key in result:
@@ -1089,8 +1292,25 @@ class OptimalScopusDatabase:
     def _print_statistics(self):
         """Print database statistics."""
         print("\n" + "="*60)
-        print("SCOPUS DATA DATABASE STATISTICS")
+        print("HIGH-QUALITY RESEARCH DATABASE STATISTICS")
         print("="*60)
+        
+        # Multi-CSV and data quality summary
+        total_input = self.stats["papers_processed"] + self.stats["papers_filtered_out"]
+        
+        if self.multi_csv_mode:
+            print(f"\n📊 MULTI-CSV PROCESSING METRICS:")
+            print(f"CSV files processed: {self.stats['csv_files_processed']:,}")
+            if self.stats.get("duplicates_removed", 0) > 0:
+                print(f"Duplicate records removed: {self.stats['duplicates_removed']:,}")
+            print(f"Total unique records: {total_input:,}")
+        
+        if self.stats.get("papers_filtered_out", 0) > 0:
+            quality_rate = (self.stats["papers_processed"] / total_input) * 100
+            print(f"\n📊 DATA QUALITY METRICS:")
+            print(f"Total records after deduplication: {total_input:,}")
+            print(f"High-quality papers: {self.stats['papers_processed']:,} ({quality_rate:.1f}%)")
+            print(f"Filtered out: {self.stats['papers_filtered_out']:,} ({100-quality_rate:.1f}%)")
         
         cursor = self.conn.cursor()
         

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scopus-db"
-version = "0.1.0"
+version = "0.2.0"
 description = "A tool for creating optimized SQLite databases from Scopus CSV exports"
 readme = "README.md"
 requires-python = ">=3.6"
@@ -31,10 +31,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/scopus-db"
-Documentation = "https://github.com/yourusername/scopus-db/docs"
-Repository = "https://github.com/yourusername/scopus-db"
-Issues = "https://github.com/yourusername/scopus-db/issues"
+Homepage = "https://github.com/Thisiswallz/2025_Scopus_db_builder"
+Documentation = "https://github.com/Thisiswallz/2025_Scopus_db_builder#readme"
+Repository = "https://github.com/Thisiswallz/2025_Scopus_db_builder"
+Issues = "https://github.com/Thisiswallz/2025_Scopus_db_builder/issues"
 
 [project.scripts]
 scopus-db = "scopus_db.cli:main"

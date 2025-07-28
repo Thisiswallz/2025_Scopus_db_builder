@@ -1,2 +1,0 @@
-(TITLE-ABS-KEY("3D printing" OR "additive manufacturing" OR "three dimensional printing" OR "3D printed") AND TITLE-ABS-KEY("advanced manufacturing" OR "industry 4.0" OR "digital manufacturing" OR "precision manufacturing" OR "robotics" OR "automation" OR "process optimization" OR "smart manufacturing" OR "design for additive manufacturing" OR DfAM OR "high-performance materials") AND PUBYEAR > 2015) AND LIMIT-TO(SRCTYPE, "j") AND LIMIT-TO(DOCTYPE, "ar") AND NOT RETRACTED()
-
