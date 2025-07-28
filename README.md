@@ -381,16 +381,8 @@ A detailed exclusion log is automatically generated:
 - **Format**: `data_quality_exclusion_log_YYYYMMDD_HHMMSS.json`
 - **Contents**: Excluded records with specific rationales
 
-### **Disabling Filtering**
-To include all CSV data without filtering:
-
-```bash
-# CLI without filtering
-python create_database.py data/scopus_export.csv --no-filter
-
-# Python API without filtering (custom implementation needed)
-# Note: Direct API flag not yet implemented - use create_database.py
-```
+### **Note on Filtering**
+Data quality filtering is always enabled in the standard scripts to ensure research data integrity. This helps maintain high-quality datasets suitable for academic research and analysis.
 
 ## Database Output Structure
 

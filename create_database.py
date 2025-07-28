@@ -3,9 +3,11 @@
 Quick-start script for creating Scopus database using the package.
 This demonstrates how to use the scopus_db package programmatically.
 
+Data quality filtering is always enabled to ensure high-quality research data.
+
 Usage:
-  python create_database.py <scopus.csv>                    # With data quality filtering (recommended)
-  python create_database.py <scopus.csv> --no-filter       # Without filtering (all data)
+  python create_database.py <scopus.csv>                    # Single CSV file
+  python create_database.py <directory>                     # Directory with multiple CSV files
 """
 
 import sys
@@ -31,27 +33,22 @@ def find_scopus_csv_files(directory_path: Path) -> list:
 
 
 def main():
-    """Create Scopus database from CSV file(s) or directory with optional data quality filtering."""
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print("Usage: python create_database.py <scopus.csv|directory> [--no-filter]")
-        print("")
-        print("Options:")
-        print("  --no-filter    Disable data quality filtering (include all CSV rows)")
+    """Create Scopus database from CSV file(s) or directory with data quality filtering."""
+    if len(sys.argv) != 2:
+        print("Usage: python create_database.py <scopus.csv|directory>")
         print("")
         print("Examples:")
         print("  # Single CSV file")
         print("  python create_database.py data/scopus_exports/export_1/scopus.csv")
         print("  # Directory with multiple CSV files")
         print("  python create_database.py data/scopus_exports/export_1/")
-        print("  # Without filtering")
-        print("  python create_database.py data/scopus_exports/export_1/ --no-filter")
         print("")
         print("Multi-CSV Processing:")
         print("  - Combines all CSV files in directory into single database")
         print("  - Automatically detects and removes duplicate records")
         print("  - Reports source files and deduplication statistics")
         print("")
-        print("Data Quality Filtering (enabled by default):")
+        print("Data Quality Filtering (always enabled):")
         print("  - Excludes papers missing authors, abstracts, or publication dates")
         print("  - Filters out editorial content (corrections, errata)")
         print("  - Removes non-research content (conference announcements, TOC)")
@@ -59,19 +56,7 @@ def main():
         sys.exit(1)
     
     input_path = Path(sys.argv[1])
-    enable_filtering = True
-    
-    # Check for no-filter option
-    if len(sys.argv) == 3:
-        if sys.argv[2] == "--no-filter":
-            enable_filtering = False
-            print("⚠️  Data quality filtering DISABLED - processing all CSV rows")
-        else:
-            print(f"Error: Unknown option '{sys.argv[2]}'")
-            print("Use --no-filter to disable data quality filtering")
-            sys.exit(1)
-    else:
-        print("✅ Data quality filtering ENABLED - ensuring high-quality research data")
+    print("✅ Data quality filtering ENABLED - ensuring high-quality research data")
     
     # Handle directory vs file input
     if input_path.is_dir():
@@ -104,7 +89,7 @@ def main():
         # Create database using directory mode
         db_creator = OptimalScopusDatabase(
             csv_path=input_path, 
-            enable_data_filtering=enable_filtering,
+            enable_data_filtering=True,
             csv_files=csv_files
         )
         
@@ -127,7 +112,7 @@ def main():
         
         db_creator = OptimalScopusDatabase(
             csv_path=input_path, 
-            enable_data_filtering=enable_filtering
+            enable_data_filtering=True
         )
     else:
         print(f"❌ Error: '{input_path}' is not a valid CSV file or directory")
@@ -142,8 +127,7 @@ def main():
     db_creator.conn.close()
     
     print(f"\n✅ Database created: {db_creator.db_path}")
-    if enable_filtering:
-        print(f"📝 Exclusion log: {db_creator.data_filter.log_path}")
+    print(f"📝 Exclusion log: {db_creator.data_filter.log_path}")
 
 
 if __name__ == "__main__":
