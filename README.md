@@ -4,15 +4,15 @@ A professional Python package for creating and validating optimized SQLite datab
 
 ## Features
 
-- **CrossRef DOI Recovery**: Automatic multi-phase DOI recovery for papers missing DOIs
-- **CLI Commands**: Simple command-line interface for database creation and validation
-- **Python API**: Clean programmatic interface for external project integration
-- **Database Validation**: Comprehensive integrity checking against original CSV data
-- **Pure Python**: No external dependencies - uses only standard library
+- **3-Step Sequential Workflow**: Separated database creation, CrossRef enrichment, and Lens enrichment
+- **Fast Database Creation**: Step 1 creates optimized databases in ~30 seconds (offline, no API calls)
+- **Optional CrossRef Enrichment**: Step 2 recovers missing DOIs with multi-phase recovery pipeline
+- **Future Lens Integration**: Step 3 will add patent citations and enhanced institution data
+- **Pure Python**: No external dependencies for core database creation
 - **Research-Ready**: Optimized SQLite schema with proper relationships and indexing
-- **Configuration System**: Flexible JSON-based configuration for CrossRef and processing options
+- **Comprehensive Data Quality**: Built-in filtering with detailed exclusion reports
 - **Organized Output**: Structured folder system with raw data, outputs, and detailed reports
-- **Missing DOI Reports**: Specialized troubleshooting reports for unrecovered DOIs
+- **Performance Optimized**: Separated concerns allow fast offline processing vs. slower network tasks
 - **GitHub Installation**: Easy installation directly from GitHub repository
 
 ## Installation
@@ -41,25 +41,25 @@ pip install -e .
 
 ## Quick Start
 
-### CLI Usage
+### 3-Step Workflow
 
-After installation, use the `scopus-db` command globally:
+The Scopus Database Builder uses a 3-step sequential workflow for maximum flexibility and performance:
 
 ```bash
-# Create database from Scopus CSV export (with automatic DOI recovery)
-scopus-db create data/my_scopus_export.csv
+# Step 1: Create optimized database (fast, offline)
+python 1_create_database.py data/my_scopus_export.csv
 
-# Create database with custom configuration
-scopus-db create data/my_scopus_export.csv --config config.json
+# Step 2: Enrich with CrossRef DOI recovery (optional, requires internet)
+python 2_enrich_database.py path/to/created/database.db --email your@email.edu
 
-# Validate database integrity against original CSV
-scopus-db check my_database.db --csv-file data/my_scopus_export.csv
-
-# Get help
-scopus-db --help
-scopus-db create --help
-scopus-db check --help
+# Step 3: Enrich with Lens patent/institution data (optional, future feature)
+python 3_Lens_database.py path/to/database.db --api-key your_lens_key
 ```
+
+### Why This Approach?
+- **Step 1 is fast**: Database creation completes in ~30 seconds without network dependencies
+- **Step 2 is optional**: Only run CrossRef enrichment if you need missing DOIs recovered
+- **Step 3 is future**: Lens enrichment for patent citations and enhanced institution data
 
 ### Configuration Setup (Optional)
 
@@ -106,9 +106,14 @@ print(f"Authors: {info['authors']}")
 print(f"File size: {info['file_size_mb']} MB")
 ```
 
-## CrossRef DOI Recovery
+## Step 2: CrossRef DOI Recovery
 
-The system includes automatic DOI recovery for papers missing DOIs in the Scopus export:
+Optional enrichment step that recovers missing DOIs from existing databases:
+
+```bash
+# Run on database created by Step 1
+python 2_enrich_database.py path/to/database.db --email your@university.edu
+```
 
 ### Multi-Phase Recovery Pipeline
 1. **Phase 1**: PubMed ID-based lookup (85-95% success rate)
@@ -126,10 +131,10 @@ Enable CrossRef recovery in your `config.json`:
 }
 ```
 
-### Missing DOI Reports
-For papers where DOI recovery fails, the system generates:
-- **Analysis Report**: `*_missing_doi_analysis.txt` - Troubleshooting recommendations
-- **CSV Export**: `*_missing_doi.csv` - Detailed data for manual investigation
+### Enrichment Reports
+For papers where DOI recovery fails, enrichment generates:
+- **Enrichment Report**: `enrichment_report_crossref_*.json` - Recovery statistics and analysis
+- **Missing DOI Analysis**: `*_missing_doi_analysis.txt` - Troubleshooting recommendations
 
 See `docs/MISSING_DOI_TROUBLESHOOTING.md` for detailed troubleshooting guide.
 
@@ -483,12 +488,22 @@ data/scopus_exports/export_1/
 ### Zero-Dependency Architecture
 The system maintains a zero-dependency approach using only Python's standard library. This design choice eliminates dependency management issues while providing sophisticated features like CrossRef integration.
 
-### Multi-Phase Processing Pipeline
+### 3-Step Sequential Pipeline
+
+**Step 1: Database Creation** (`1_create_database.py`)
 1. **Entity Normalization**: Extract and normalize authors, institutions, keywords
 2. **Complex Data Parsing**: Parse funding, citations, chemicals, trade names
-3. **CrossRef DOI Recovery**: Multi-phase DOI recovery for missing identifiers
-4. **Relationship Optimization**: Build optimized relationships with TF-IDF scoring
-5. **Analytics Pre-computation**: Generate collaboration networks and trend analyses
+3. **Relationship Optimization**: Build optimized relationships with TF-IDF scoring
+4. **Analytics Pre-computation**: Generate collaboration networks and trend analyses
+
+**Step 2: CrossRef Enrichment** (`2_enrich_database.py`)
+1. **DOI Recovery**: Multi-phase recovery pipeline for missing identifiers
+2. **Confidence Scoring**: Validate recovered DOI matches
+3. **Database Updates**: Update existing database with recovered metadata
+
+**Step 3: Lens Enrichment** (`3_Lens_database.py` - Future)
+1. **Patent Citations**: Link papers to citing patents
+2. **Institution Enhancement**: Enrich with detailed institution metadata
 
 ## Requirements
 

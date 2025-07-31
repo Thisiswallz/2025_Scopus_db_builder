@@ -9,11 +9,12 @@ import sqlite3
 import csv
 import json
 import os
+import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
-from ..data_quality_filter import ScopusDataQualityFilter
+from ..data_quality_filter_simple import ScopusDataQualityFilter
 
 
 class OptimalScopusDatabase:
@@ -26,7 +27,7 @@ class OptimalScopusDatabase:
     3. Analytics layer with materialized collaboration networks
     """
     
-    def __init__(self, csv_path: str, enable_data_filtering: bool = True, csv_files: List = None):
+    def __init__(self, csv_path: str, enable_data_filtering: bool = True, csv_files: List = None, keyword: str = None, query_file: str = None):
         """
         Initialize optimal database creator.
         
@@ -34,56 +35,87 @@ class OptimalScopusDatabase:
             csv_path: Path to Scopus CSV export file or directory
             enable_data_filtering: Whether to apply data quality filtering
             csv_files: List of CSV files (for multi-CSV mode)
+            keyword: Keyword for master database naming (e.g., '3DP' -> 'master-3DP.db')
+            query_file: Path to file containing Scopus query (optional)
         """
         self.csv_path = Path(csv_path)
         self.csv_files = csv_files or []
         self.multi_csv_mode = bool(csv_files)
+        self.keyword = keyword
+        self.scopus_query = None
+        
+        # Load Scopus query if file provided
+        self.expected_total_results = None
+        if query_file:
+            try:
+                query_path = Path(query_file)
+                if query_path.exists():
+                    with open(query_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        lines = content.split('\n')
+                        
+                        # Parse the query and total results
+                        for line in lines:
+                            line = line.strip()
+                            if line.startswith("Scopus_query="):
+                                self.scopus_query = line[len("Scopus_query="):].strip()
+                            elif line.startswith("total_results="):
+                                try:
+                                    self.expected_total_results = int(line[len("total_results="):].strip())
+                                except ValueError:
+                                    pass
+                    
+                    if self.scopus_query:
+                        print(f"✅ Loaded Scopus query from: {query_file}")
+                        print(f"   Query length: {len(self.scopus_query)} characters")
+                        if self.expected_total_results:
+                            print(f"   Expected total results: {self.expected_total_results:,}")
+                    else:
+                        print(f"⚠️ No valid Scopus query found in: {query_file}")
+                else:
+                    print(f"⚠️ Query file not found: {query_file}")
+            except Exception as e:
+                print(f"⚠️ Error loading query file: {e}")
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Determine the base directory and organize files properly
         if self.multi_csv_mode:
             # For multi-CSV mode (directory input)
-            base_dir = self.csv_path  # This is the export directory (e.g., data/export_1)
-            db_name = f"{self.csv_path.name}_combined_research_optimized_{timestamp}.db"
+            base_dir = self.csv_path.parent  # Use parent directory for output placement
         else:
             # For single CSV mode
             # Check if CSV is in raw_scopus/ subfolder (organized structure)
             if self.csv_path.parent.name == "raw_scopus":
                 base_dir = self.csv_path.parent.parent  # Go up to export directory
-                db_name = f"{base_dir.name}_research_optimized_{timestamp}.db"
             else:
                 # CSV is in the main directory (legacy structure)
                 base_dir = self.csv_path.parent
-                db_name = f"{self.csv_path.stem}_research_optimized_{timestamp}.db"
         
-        # Database goes in the main export directory
-        self.db_path = base_dir / db_name
+        # Create timestamped output directory for ALL outputs including database
+        run_output_dir = base_dir / "output" / f"Run_{timestamp}"
+        run_output_dir.mkdir(parents=True, exist_ok=True)  # Create timestamped output directory
         
-        # Output files go in the output/ subfolder
-        output_dir = base_dir / "output"
-        output_dir.mkdir(exist_ok=True)  # Create output directory if it doesn't exist
+        # Database now goes INSIDE the timestamped run folder
+        db_name = f"master_{timestamp}.db"
+        self.db_path = run_output_dir / db_name
         
-        # Quality filter logs go in output/ folder
+        # Quality filter logs go in timestamped output folder
         if self.multi_csv_mode:
-            filter_log_path = output_dir / f"data_quality_exclusions_combined_{timestamp}.json"
+            filter_log_path = run_output_dir / f"data_quality_exclusions_combined_{timestamp}.json"
         else:
-            filter_log_path = output_dir / f"data_quality_exclusions_{timestamp}.json"
+            filter_log_path = run_output_dir / f"data_quality_exclusions_{timestamp}.json"
             
-        # Load configuration for CrossRef and other settings
+        # Load configuration for data quality settings
         from ..config_loader import get_config
         config = get_config()
         
-        # Get CrossRef configuration
-        crossref_config = config.get_crossref_config()
+        # Get data quality configuration
         data_quality_config = config.get_data_quality_config()
         
         self.data_filter = ScopusDataQualityFilter(
             enable_filtering=enable_data_filtering and data_quality_config['filtering_enabled'],
-            log_path=str(filter_log_path),
-            enable_crossref_recovery=config.is_crossref_enabled(),
-            crossref_email=config.get_crossref_email(),
-            skip_confirmation=crossref_config['skip_confirmation']
+            log_path=str(filter_log_path)
         )
         
         # Store config for use in database creation
@@ -99,7 +131,7 @@ class OptimalScopusDatabase:
         self.institution_counter = 1
         self.keyword_counter = 1
         
-        # Statistics tracking
+        # Statistics tracking with expected vs actual counts
         self.stats = {
             "papers_processed": 0,
             "papers_filtered_out": 0,
@@ -109,6 +141,267 @@ class OptimalScopusDatabase:
             "institutions_normalized": 0,
             "keywords_normalized": 0,
         }
+        
+        # Expected vs Actual table population tracking
+        self.population_tracking = {
+            "expected": {
+                "papers": 0,
+                "authors_master": 0,
+                "institutions_master": 0,
+                "keywords_master": 0,
+                "paper_funding": 0,
+                "paper_authors": 0,
+                "paper_keywords": 0,
+                "paper_institutions": 0,
+                "paper_citations": 0
+            },
+            "actual": {},
+            "validation_issues": []
+        }
+    
+    def _get_column_value(self, row: Dict, column_name: str, alternatives: List[str] = None) -> str:
+        """
+        Get column value handling BOM and formatting issues in CSV headers.
+        
+        Args:
+            row: CSV row dictionary
+            column_name: Primary column name to look for
+            alternatives: Alternative column names to try
+        
+        Returns:
+            Column value or empty string if not found
+        """
+        # Try exact match first
+        if column_name in row:
+            return row.get(column_name, '')
+        
+        # Handle BOM and quote issues - look for column containing the name
+        for key in row.keys():
+            if column_name in key:
+                return row.get(key, '')
+        
+        # Try alternatives if provided
+        if alternatives:
+            for alt in alternatives:
+                if alt in row:
+                    return row.get(alt, '')
+                # Also check for BOM/quote issues in alternatives
+                for key in row.keys():
+                    if alt in key:
+                        return row.get(key, '')
+        
+        return ''
+    
+    def _track_expected_counts(self, data: List[Dict]):
+        """Calculate expected table population counts from data."""
+        print("📊 Calculating expected table population counts...")
+        
+        # Papers count (should match input data)
+        self.population_tracking["expected"]["papers"] = len(data)
+        
+        # Track unique entities to estimate normalized table sizes
+        unique_authors = set()
+        unique_institutions = set()
+        unique_keywords = set()
+        total_funding_entries = 0
+        total_author_papers = 0
+        total_keyword_papers = 0
+        total_institution_papers = 0
+        total_citation_entries = 0
+        
+        for row in data:
+            # Count unique authors
+            authors_raw = self._get_column_value(row, 'Authors')
+            author_ids_raw = self._get_column_value(row, 'Author(s) ID')
+            if authors_raw and author_ids_raw:
+                author_ids = [a.strip() for a in str(author_ids_raw).split(';') if a.strip()]
+                unique_authors.update(author_ids)
+                total_author_papers += len(author_ids)
+            
+            # Count unique institutions
+            affiliations_raw = self._get_column_value(row, 'Affiliations')
+            if affiliations_raw:
+                affiliations = [a.strip() for a in str(affiliations_raw).split(';') if a.strip()]
+                unique_institutions.update(affiliations)
+                total_institution_papers += len(affiliations)
+            
+            # Count unique keywords
+            for col_name in ['Author Keywords', 'Index Keywords']:
+                keywords_raw = self._get_column_value(row, col_name)
+                if keywords_raw:
+                    keywords = [k.strip() for k in str(keywords_raw).split(';') if k.strip()]
+                    unique_keywords.update(keywords)
+                    total_keyword_papers += len(keywords)
+            
+            # Count funding entries
+            funding_text = self._get_column_value(row, 'Funding Details') or self._get_column_value(row, 'Funding Texts')
+            if funding_text:
+                funding_entries = [f.strip() for f in str(funding_text).split(';') if f.strip()]
+                total_funding_entries += len(funding_entries)
+            
+            # Count citation entries
+            references_text = self._get_column_value(row, 'References')
+            if references_text:
+                # Estimate citations based on text length and patterns
+                citation_count = len([r for r in str(references_text).split(';') if len(r.strip()) > 10])
+                total_citation_entries += citation_count
+        
+        # Update expected counts
+        self.population_tracking["expected"]["authors_master"] = len(unique_authors)
+        self.population_tracking["expected"]["institutions_master"] = len(unique_institutions)
+        self.population_tracking["expected"]["keywords_master"] = len(unique_keywords)
+        self.population_tracking["expected"]["paper_funding"] = total_funding_entries
+        self.population_tracking["expected"]["paper_authors"] = total_author_papers
+        self.population_tracking["expected"]["paper_keywords"] = total_keyword_papers
+        self.population_tracking["expected"]["paper_institutions"] = total_institution_papers
+        self.population_tracking["expected"]["paper_citations"] = total_citation_entries
+        
+        print(f"   📋 Expected papers: {self.population_tracking['expected']['papers']:,}")
+        print(f"   👥 Expected unique authors: {self.population_tracking['expected']['authors_master']:,}")
+        print(f"   🏢 Expected unique institutions: {self.population_tracking['expected']['institutions_master']:,}")
+        print(f"   🔖 Expected unique keywords: {self.population_tracking['expected']['keywords_master']:,}")
+        print(f"   💰 Expected funding entries: {self.population_tracking['expected']['paper_funding']:,}")
+        print(f"   📊 Expected citations: {self.population_tracking['expected']['paper_citations']:,}")
+    
+    def _validate_table_population(self) -> Dict:
+        """Validate that all tables populated as expected and return validation report."""
+        print("\n🔍 VALIDATING DATABASE POPULATION...")
+        
+        cursor = self.conn.cursor()
+        validation_report = {
+            "overall_status": "PASS",
+            "table_validations": {},
+            "critical_issues": [],
+            "warnings": [],
+            "population_summary": {}
+        }
+        
+        # Check each table
+        for table_name, expected_count in self.population_tracking["expected"].items():
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                actual_count = cursor.fetchone()[0]
+                self.population_tracking["actual"][table_name] = actual_count
+                
+                # Calculate population percentage
+                if expected_count > 0:
+                    population_percentage = (actual_count / expected_count) * 100
+                else:
+                    population_percentage = 100 if actual_count == 0 else 0
+                
+                # Determine validation status
+                status = "PASS"
+                issues = []
+                
+                if actual_count == 0 and expected_count > 0:
+                    status = "CRITICAL_FAIL"
+                    issues.append(f"Table is empty but expected {expected_count:,} records")
+                    validation_report["critical_issues"].append(f"{table_name}: Empty table")
+                elif population_percentage < 50:
+                    status = "FAIL"
+                    issues.append(f"Only {population_percentage:.1f}% populated ({actual_count:,}/{expected_count:,})")
+                elif population_percentage < 90:
+                    status = "WARNING"
+                    issues.append(f"Under-populated: {population_percentage:.1f}% ({actual_count:,}/{expected_count:,})")
+                    validation_report["warnings"].append(f"{table_name}: {population_percentage:.1f}% populated")
+                
+                validation_report["table_validations"][table_name] = {
+                    "status": status,
+                    "expected": expected_count,
+                    "actual": actual_count,
+                    "population_percentage": population_percentage,
+                    "issues": issues
+                }
+                
+                # Print status
+                status_emoji = "✅" if status == "PASS" else "⚠️" if status == "WARNING" else "❌"
+                print(f"   {status_emoji} {table_name}: {actual_count:,}/{expected_count:,} ({population_percentage:.1f}%)")
+                
+                if status in ["FAIL", "CRITICAL_FAIL"]:
+                    validation_report["overall_status"] = "FAIL"
+                elif status == "WARNING" and validation_report["overall_status"] == "PASS":
+                    validation_report["overall_status"] = "WARNING"
+                    
+            except Exception as e:
+                validation_report["critical_issues"].append(f"{table_name}: Database error - {str(e)}")
+                validation_report["overall_status"] = "FAIL"
+                print(f"   ❌ {table_name}: Database error - {str(e)}")
+        
+        return validation_report
+    
+    def _generate_validation_report(self, validation_report: Dict) -> str:
+        """Generate a comprehensive validation report."""
+        from datetime import datetime
+        
+        report_lines = []
+        report_lines.append("=" * 80)
+        report_lines.append("SCOPUS DATABASE POPULATION VALIDATION REPORT")
+        report_lines.append("=" * 80)
+        report_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(f"Database: {self.db_path}")
+        report_lines.append(f"Overall Status: {validation_report['overall_status']}")
+        report_lines.append("")
+        
+        # Summary statistics
+        report_lines.append("POPULATION SUMMARY:")
+        report_lines.append("-" * 40)
+        total_expected = sum(self.population_tracking["expected"].values())
+        total_actual = sum(self.population_tracking["actual"].values())
+        overall_percentage = (total_actual / total_expected * 100) if total_expected > 0 else 0
+        
+        report_lines.append(f"Total Expected Records: {total_expected:,}")
+        report_lines.append(f"Total Actual Records:   {total_actual:,}")
+        report_lines.append(f"Overall Population:     {overall_percentage:.1f}%")
+        report_lines.append("")
+        
+        # Table-by-table details
+        report_lines.append("TABLE VALIDATION DETAILS:")
+        report_lines.append("-" * 40)
+        for table_name, validation in validation_report["table_validations"].items():
+            status_symbol = "✅" if validation["status"] == "PASS" else "⚠️" if validation["status"] == "WARNING" else "❌"
+            report_lines.append(f"{status_symbol} {table_name}:")
+            report_lines.append(f"    Expected: {validation['expected']:,}")
+            report_lines.append(f"    Actual:   {validation['actual']:,}")
+            report_lines.append(f"    Population: {validation['population_percentage']:.1f}%")
+            if validation["issues"]:
+                for issue in validation["issues"]:
+                    report_lines.append(f"    Issue: {issue}")
+            report_lines.append("")
+        
+        # Critical issues
+        if validation_report["critical_issues"]:
+            report_lines.append("CRITICAL ISSUES:")
+            report_lines.append("-" * 40)
+            for issue in validation_report["critical_issues"]:
+                report_lines.append(f"❌ {issue}")
+            report_lines.append("")
+        
+        # Warnings
+        if validation_report["warnings"]:
+            report_lines.append("WARNINGS:")
+            report_lines.append("-" * 40)
+            for warning in validation_report["warnings"]:
+                report_lines.append(f"⚠️ {warning}")
+            report_lines.append("")
+        
+        # Recommendations
+        report_lines.append("RECOMMENDATIONS:")
+        report_lines.append("-" * 40)
+        if validation_report["overall_status"] == "PASS":
+            report_lines.append("✅ Database populated successfully - no action required.")
+        else:
+            report_lines.append("🔧 Issues detected - review the following:")
+            if validation_report["critical_issues"]:
+                report_lines.append("   • Fix critical failures (empty tables)")
+            if validation_report["warnings"]:
+                report_lines.append("   • Investigate under-populated tables")
+            report_lines.append("   • Check CSV data quality and column mappings")
+            report_lines.append("   • Verify database creation process completed without errors")
+        
+        report_lines.append("")
+        report_lines.append("=" * 80)
+        
+        return "\n".join(report_lines)
     
     def create_optimal_schema(self):
         """Create three-phase database schema optimized for research queries."""
@@ -191,7 +484,8 @@ class OptimalScopusDatabase:
                 document_type TEXT,
                 publication_stage TEXT,
                 issn TEXT,
-                isbn TEXT
+                isbn TEXT,
+                scopus_query TEXT
             )
         """)
     
@@ -369,9 +663,8 @@ class OptimalScopusDatabase:
     
     def _deduplicate_records(self, all_records: List[Dict[str, str]], file_sources: List[str]) -> Tuple[List[Dict[str, str]], int]:
         """
-        Remove duplicate records across multiple CSV files.
-        
-        Uses DOI as primary identifier, with Scopus Author IDs as secondary identifier.
+        Remove duplicate records using ONLY DOI-based deduplication.
+        Records without DOI are flagged for manual DOI identification.
         
         Args:
             all_records: Combined records from all CSV files
@@ -381,44 +674,77 @@ class OptimalScopusDatabase:
             Tuple of (unique_records, duplicate_count)
         """
         seen_dois = set()
-        seen_author_id_combos = set()
         unique_records = []
         duplicate_count = 0
         unique_sources = []
         
-        print(f"\n🔍 DEDUPLICATION ANALYSIS")
+        # Detailed reporting dictionaries
+        doi_duplicates = []
+        missing_doi_records = []
+        duplicates_by_year = defaultdict(int)
+        missing_doi_by_year = defaultdict(int)
+        
+        print(f"\n🔍 DOI-ONLY DEDUPLICATION ANALYSIS")
         print(f"   Total records before deduplication: {len(all_records):,}")
+        print(f"   Using ONLY DOI for duplicate detection")
         
         for i, record in enumerate(all_records):
             doi = record.get('DOI', '').strip()
-            author_ids = record.get('Author(s) ID', '').strip()
             title = record.get('Title', '').strip()
             year = record.get('Year', '').strip()
             
             is_duplicate = False
             
-            # Primary deduplication: DOI matching
-            if doi and doi in seen_dois:
+            if not doi:
+                # NO DOI - Flag for review but include in database
+                missing_doi_records.append({
+                    'record_index': i,
+                    'title': title[:100] + '...' if len(title) > 100 else title,
+                    'year': year,
+                    'source_file': file_sources[i],
+                    'authors': record.get('Authors', '')[:100] + '...' if len(record.get('Authors', '')) > 100 else record.get('Authors', ''),
+                    'source_title': record.get('Source title', ''),
+                    'pubmed_id': record.get('PubMed ID', '').strip()
+                })
+                
+                # Track missing DOI by year
+                if year:
+                    try:
+                        year_int = int(year)
+                        if 2000 <= year_int <= 2030:
+                            missing_doi_by_year[year_int] += 1
+                    except ValueError:
+                        pass
+                
+                # Include record without DOI (no deduplication possible)
+                unique_records.append(record)
+                unique_sources.append(file_sources[i])
+                
+            elif doi in seen_dois:
+                # DOI DUPLICATE - Remove
                 is_duplicate = True
                 duplicate_count += 1
                 
-            # Secondary deduplication: Scopus Author IDs + Title + Year
-            elif author_ids and title and year:
-                # Create a unique identifier from author IDs, title, and year
-                author_id_combo = f"{author_ids}:{title.lower()}:{year}"
-                if author_id_combo in seen_author_id_combos:
-                    is_duplicate = True
-                    duplicate_count += 1
-                else:
-                    seen_author_id_combos.add(author_id_combo)
-            
-            # Add to unique set if not duplicate
-            if not is_duplicate:
-                if doi:
-                    seen_dois.add(doi)
-                if author_ids and title and year:
-                    author_id_combo = f"{author_ids}:{title.lower()}:{year}"
-                    seen_author_id_combos.add(author_id_combo)
+                # Log DOI duplicate details
+                doi_duplicates.append({
+                    'record_index': i,
+                    'doi': doi,
+                    'title': title[:100] + '...' if len(title) > 100 else title,
+                    'year': year,
+                    'source_file': file_sources[i]
+                })
+                
+                # Track duplicates by year
+                if year:
+                    try:
+                        year_int = int(year)
+                        if 2000 <= year_int <= 2030:
+                            duplicates_by_year[year_int] += 1
+                    except ValueError:
+                        pass
+            else:
+                # UNIQUE DOI - Keep record
+                seen_dois.add(doi)
                 unique_records.append(record)
                 unique_sources.append(file_sources[i])
         
@@ -427,10 +753,82 @@ class OptimalScopusDatabase:
         if duplicate_count > 0:
             print(f"   📊 Deduplication rate: {duplicate_count/len(all_records)*100:.1f}%")
         
+        # Calculate missing DOI count
+        missing_doi_count = len(missing_doi_records)
+        
+        # DETAILED REPORTING
+        print(f"\n📋 DETAILED DEDUPLICATION REPORT:")
+        print(f"   DOI-based deduplication: {duplicate_count:,} duplicates removed")
+        print(f"   Records without DOI: {missing_doi_count:,} flagged for review")
+        
+        # Report duplicates by publication year
+        if duplicates_by_year:
+            print(f"\n   📅 Duplicates by publication year:")
+            for year in sorted(duplicates_by_year.keys(), reverse=True):
+                count = duplicates_by_year[year]
+                print(f"      {year}: {count:,} duplicates")
+        
+        # Report missing DOI records by year
+        if missing_doi_by_year:
+            print(f"\n   🔍 Records without DOI by year (flagged for review):")
+            for year in sorted(missing_doi_by_year.keys(), reverse=True):
+                count = missing_doi_by_year[year]
+                print(f"      {year}: {count:,} records need DOI")
+        
+        # Save detailed duplicate logs to file
+        if hasattr(self, 'data_filter') and self.data_filter:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            duplicate_log = {
+                'summary': {
+                    'total_records': len(all_records),
+                    'unique_records': len(unique_records),
+                    'duplicate_count': duplicate_count,
+                    'deduplication_rate': duplicate_count/len(all_records)*100 if len(all_records) > 0 else 0,
+                    'missing_doi_count': missing_doi_count,
+                    'duplicates_by_year': dict(duplicates_by_year),
+                    'missing_doi_by_year': dict(missing_doi_by_year)
+                },
+                'doi_duplicates': doi_duplicates[:100],  # Limit to first 100 for file size
+                'missing_doi_records': missing_doi_records[:100],  # Sample of records needing DOI
+                'generation_timestamp': timestamp
+            }
+            
+            # Save to JSON file in output directory
+            if hasattr(self.data_filter, 'log_path'):
+                duplicate_log_path = self.data_filter.log_path.parent / f"deduplication_details_{timestamp}.json"
+                try:
+                    with open(duplicate_log_path, 'w', encoding='utf-8') as f:
+                        json.dump(duplicate_log, f, indent=2, ensure_ascii=False)
+                    print(f"   💾 Detailed duplicate log saved: {duplicate_log_path.name}")
+                except Exception as e:
+                    print(f"   ⚠️ Could not save duplicate log: {e}")
+                
+                # Save separate missing DOI records file for manual review
+                if missing_doi_count > 0:
+                    missing_doi_log_path = self.data_filter.log_path.parent / f"missing_doi_records_{timestamp}.json"
+                    missing_doi_report = {
+                        'summary': {
+                            'total_missing_doi': missing_doi_count,
+                            'missing_doi_by_year': dict(missing_doi_by_year)
+                        },
+                        'records_needing_doi': missing_doi_records,
+                        'generation_timestamp': timestamp,
+                        'instructions': 'These records lack DOI and were not deduplicated. Manual DOI identification needed.'
+                    }
+                    try:
+                        with open(missing_doi_log_path, 'w', encoding='utf-8') as f:
+                            json.dump(missing_doi_report, f, indent=2, ensure_ascii=False)
+                        print(f"   🔍 Missing DOI report saved: {missing_doi_log_path.name}")
+                    except Exception as e:
+                        print(f"   ⚠️ Could not save missing DOI report: {e}")
+        
         return unique_records, duplicate_count
     
     def process_csv_to_optimal_db(self):
         """Parse and import Scopus CSV data into structured database with quality filtering."""
+        logger = logging.getLogger(__name__)
+        
+        logger.info("🔄 Starting CSV data processing and population")
         
         if self.multi_csv_mode:
             # Multi-CSV processing
@@ -474,7 +872,9 @@ class OptimalScopusDatabase:
             self.stats["csv_files_processed"] = 1
         
         # Apply data quality filtering
+        logger.info(f"📊 Starting data quality filtering on {len(raw_data):,} records")
         data, filter_report = self.data_filter.filter_csv_data(raw_data)
+        logger.info(f"✅ Data quality filtering completed. Records after filtering: {len(data):,}")
         self.stats["papers_filtered_out"] = filter_report["summary"]["excluded_records"]
         
         # Print filtering summary
@@ -486,6 +886,12 @@ class OptimalScopusDatabase:
         print(f"   Quality improvement: {filter_report['summary']['quality_improvement']}")
         print(f"   Detailed exclusion log: {filter_report['log_file']}")
         print(f"\nProceeding with {len(data)} high-quality research papers...")
+        
+        # Track expected counts before processing
+        self._track_expected_counts(data)
+        
+        # Database schema already created in main script - skip duplicate creation
+        logger.info("🔧 Database schema already created, proceeding with data import")
         
         # Phase 1: Extract and normalize entities
         print("\n=== Phase 1: Entity Normalization ===")
@@ -516,6 +922,47 @@ class OptimalScopusDatabase:
         print(f"\n✅ High-quality research database created: {self.db_path}")
         print(f"Database size: {self.db_path.stat().st_size / (1024*1024):.1f} MB")
         self._print_statistics()
+        
+        # Validate database population
+        validation_report = self._validate_table_population()
+        
+        # Generate and save validation report
+        report_content = self._generate_validation_report(validation_report)
+        
+        # Save validation report to file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"database_validation_report_{timestamp}.txt"
+        if self.multi_csv_mode:
+            report_path = self.csv_path / "output" / report_filename
+        else:
+            if self.csv_path.parent.name == "raw_scopus":
+                report_path = self.csv_path.parent.parent / "output" / report_filename
+            else:
+                report_path = self.csv_path.parent / report_filename
+        
+        # Ensure output directory exists
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+        
+        # Print validation summary
+        print(f"\n🔍 DATABASE VALIDATION SUMMARY:")
+        print(f"   Overall Status: {validation_report['overall_status']}")
+        if validation_report['critical_issues']:
+            print(f"   ❌ Critical Issues: {len(validation_report['critical_issues'])}")
+        if validation_report['warnings']:
+            print(f"   ⚠️ Warnings: {len(validation_report['warnings'])}")
+        print(f"   📋 Detailed report saved: {report_path}")
+        
+        # Print final status
+        if validation_report['overall_status'] == 'PASS':
+            print(f"\n🎉 DATABASE SUCCESSFULLY VALIDATED - All tables populated correctly!")
+        elif validation_report['overall_status'] == 'WARNING':
+            print(f"\n⚠️ DATABASE CREATED WITH WARNINGS - Check report for details")
+        else:
+            print(f"\n❌ DATABASE VALIDATION FAILED - Check report for critical issues")
+            print(f"   Report location: {report_path}")
     
     def _import_papers(self, data: List[Dict]):
         """Import papers with enhanced metadata."""
@@ -532,8 +979,8 @@ class OptimalScopusDatabase:
                     paper_id, title, year, doi, source_title, volume, issue,
                     page_start, page_end, page_count, cited_by, scopus_link,
                     abstract, language_original, document_type, publication_stage,
-                    issn, isbn
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    issn, isbn, scopus_query
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 idx + 1,  # paper_id (1-based)
                 row.get('Title', ''),
@@ -552,7 +999,8 @@ class OptimalScopusDatabase:
                 row.get('Document Type', ''),
                 row.get('Publication Stage', ''),
                 row.get('ISSN', ''),
-                row.get('ISBN', '')
+                row.get('ISBN', ''),
+                self.scopus_query  # Add the Scopus query for each record
             ))
             
             self.stats["papers_processed"] += 1
@@ -566,9 +1014,9 @@ class OptimalScopusDatabase:
         cursor = self.conn.cursor()
         
         for idx, row in enumerate(data):
-            authors_raw = row.get('Authors', '')
-            author_ids_raw = row.get('Author(s) ID', '')
-            full_names_raw = row.get('Author full names', '')
+            authors_raw = self._get_column_value(row, 'Authors')
+            author_ids_raw = self._get_column_value(row, 'Author(s) ID')
+            full_names_raw = self._get_column_value(row, 'Author full names')
             
             if authors_raw and author_ids_raw:
                 authors = [a.strip() for a in str(authors_raw).split(';') if a.strip()]
@@ -762,8 +1210,8 @@ class OptimalScopusDatabase:
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
-            authors_raw = row.get('Authors', '')
-            author_ids_raw = row.get('Author(s) ID', '')
+            authors_raw = self._get_column_value(row, 'Authors')
+            author_ids_raw = self._get_column_value(row, 'Author(s) ID')
             
             if authors_raw and author_ids_raw:
                 author_ids = [a.strip() for a in str(author_ids_raw).split(';') if a.strip()]
@@ -857,7 +1305,7 @@ class OptimalScopusDatabase:
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
-            funding_text = row.get('Funding Details', '') or row.get('Funding Text', '')
+            funding_text = self._get_column_value(row, 'Funding Details') or self._get_column_value(row, 'Funding Texts')
             
             if funding_text:
                 # Parse funding agencies and grant numbers
@@ -1163,7 +1611,7 @@ class OptimalScopusDatabase:
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
-            chemicals_text = row.get('Chemicals/CAS', '') or row.get('Chemical', '')
+            chemicals_text = self._get_column_value(row, 'Chemicals/CAS', ['Chemical'])
             
             if chemicals_text:
                 chemicals = [c.strip() for c in str(chemicals_text).split(';') if c.strip()]
@@ -1207,7 +1655,7 @@ class OptimalScopusDatabase:
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
-            trade_names_text = row.get('Tradenames', '') or row.get('Trade Names', '')
+            trade_names_text = self._get_column_value(row, 'Tradenames', ['Trade Names'])
             
             if trade_names_text:
                 trade_names = [t.strip() for t in str(trade_names_text).split(';') if t.strip()]
@@ -1250,7 +1698,7 @@ class OptimalScopusDatabase:
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
-            correspondence = row.get('Correspondence Address', '') or row.get('Corresponding Author', '')
+            correspondence = self._get_column_value(row, 'Correspondence Address', ['Corresponding Author'])
             
             if correspondence:
                 # Extract email if present
@@ -1294,8 +1742,8 @@ class OptimalScopusDatabase:
         
         for idx, row in enumerate(data):
             paper_id = idx + 1
-            access_type = row.get('Access Type', '') or row.get('Open Access', '')
-            publisher = row.get('Publisher', '')
+            access_type = self._get_column_value(row, 'Access Type', ['Open Access'])
+            publisher = self._get_column_value(row, 'Publisher')
             
             # Determine if it's open access
             open_access = False
@@ -1380,6 +1828,12 @@ class OptimalScopusDatabase:
         if result and result[0]:
             print(f"Publication Years: {result[0]} - {result[1]} ({result[2]} papers with dates)")
         
+        # Compare database counts with expected Scopus counts
+        self._print_yearly_comparison(cursor)
+        
+        # Validate against Scopus export metadata if available
+        self.validate_against_scopus_export(cursor)
+        
         # Most common author name
         cursor.execute("""
             SELECT full_name, COUNT(*) as paper_count
@@ -1405,5 +1859,255 @@ class OptimalScopusDatabase:
             print(f"Most Frequent Keyword: {result[0]} ({result[1]} occurrences)")
         
         print("\n" + "="*60)
+
+    def _print_yearly_comparison(self, cursor):
+        """Compare database yearly counts with expected Scopus counts."""
+        # Expected counts from Scopus query data
+        expected_counts = {
+            2025: 6597,
+            2024: 8688,
+            2023: 7619,
+            2022: 6964,
+            2021: 5801,
+            2020: 4990,
+            2019: 4007,
+            2018: 3150,
+            2017: 2288,
+            2016: 1724
+        }
+        
+        # Get actual database counts by year
+        cursor.execute("""
+            SELECT CAST(year as INTEGER) as year_int, COUNT(*) as count
+            FROM papers 
+            WHERE year IS NOT NULL 
+                AND year != '' 
+                AND year != 'null'
+                AND year NOT LIKE '%null%'
+                AND CAST(year as INTEGER) BETWEEN 2016 AND 2025
+            GROUP BY CAST(year as INTEGER)
+            ORDER BY CAST(year as INTEGER) DESC
+        """)
+        actual_counts = dict(cursor.fetchall())
+        
+        print(f"\n📊 DATABASE vs EXPECTED COUNTS COMPARISON")
+        print(f"=" * 70)
+        print(f"{'Year':<6} {'Expected':<10} {'Database':<10} {'Missing':<10} {'% Found':<10}")
+        print("-" * 70)
+        
+        total_expected = 0
+        total_found = 0
+        total_missing = 0
+        
+        for year in sorted(expected_counts.keys(), reverse=True):
+            expected = expected_counts[year]
+            found = actual_counts.get(year, 0)
+            missing = expected - found
+            percent_found = (found / expected * 100) if expected > 0 else 0
+            
+            total_expected += expected
+            total_found += found
+            total_missing += missing
+            
+            status = "✅" if percent_found >= 95 else "⚠️" if percent_found >= 80 else "🚨"
+            print(f"{year:<6} {expected:<10,} {found:<10,} {missing:<10,} {percent_found:<9.1f}% {status}")
+        
+        print("-" * 70)
+        print(f"{'TOTAL':<6} {total_expected:<10,} {total_found:<10,} {total_missing:<10,} {total_found/total_expected*100:<9.1f}%")
+        
+        # Coverage analysis
+        print(f"\n🎯 COVERAGE ANALYSIS:")
+        if total_found >= total_expected * 0.95:
+            print(f"✅ Excellent coverage: {total_found/total_expected*100:.1f}% of expected documents found")
+        elif total_found >= total_expected * 0.80:
+            print(f"⚠️ Good coverage: {total_found/total_expected*100:.1f}% of expected documents found")
+        else:
+            print(f"🚨 Low coverage: {total_found/total_expected*100:.1f}% of expected documents found")
+        
+        print(f"Missing documents: {total_missing:,}")
+        
+        # Identify problematic years
+        problem_years = []
+        for year in expected_counts:
+            expected = expected_counts[year]
+            found = actual_counts.get(year, 0)
+            percent_found = (found / expected * 100) if expected > 0 else 0
+            if percent_found < 80:
+                problem_years.append((year, percent_found, expected - found))
+        
+        if problem_years:
+            print(f"\n🚨 YEARS NEEDING ATTENTION:")
+            for year, percent, missing in problem_years:
+                print(f"   {year}: {percent:.1f}% found ({missing:,} missing documents)")
+        
+        # Save yearly comparison report to file
+        if hasattr(self, 'data_filter') and self.data_filter and hasattr(self.data_filter, 'log_path'):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            yearly_comparison_path = self.data_filter.log_path.parent / f"yearly_comparison_{timestamp}.json"
+            
+            comparison_report = {
+                'summary': {
+                    'total_expected': total_expected,
+                    'total_found': total_found,
+                    'total_missing': total_missing,
+                    'coverage_percentage': total_found/total_expected*100 if total_expected > 0 else 0
+                },
+                'yearly_breakdown': {
+                    str(year): {
+                        'expected': expected_counts[year],
+                        'found': actual_counts.get(year, 0),
+                        'missing': expected_counts[year] - actual_counts.get(year, 0),
+                        'coverage_percentage': (actual_counts.get(year, 0) / expected_counts[year] * 100) if expected_counts[year] > 0 else 0
+                    } for year in expected_counts
+                },
+                'problem_years': [
+                    {'year': year, 'coverage_percentage': percent, 'missing_count': missing}
+                    for year, percent, missing in problem_years
+                ],
+                'generation_timestamp': timestamp
+            }
+            
+            try:
+                with open(yearly_comparison_path, 'w', encoding='utf-8') as f:
+                    json.dump(comparison_report, f, indent=2, ensure_ascii=False)
+                print(f"   💾 Yearly comparison report saved: {yearly_comparison_path.name}")
+            except Exception as e:
+                print(f"   ⚠️ Could not save yearly comparison report: {e}")
+    
+    def validate_against_scopus_export(self, cursor):
+        """Validate database against Scopus export metadata if available."""
+        print(f"\n🔍 VALIDATING AGAINST SCOPUS EXPORT METADATA")
+        print(f"=" * 70)
+        
+        validation_results = {
+            'total_validation': None,
+            'yearly_validation': None,
+            'validation_timestamp': datetime.now().isoformat()
+        }
+        
+        # Check total results if available from query file
+        if hasattr(self, 'expected_total_results') and self.expected_total_results:
+            cursor.execute("SELECT COUNT(*) FROM papers")
+            actual_total = cursor.fetchone()[0]
+            
+            coverage_percentage = (actual_total / self.expected_total_results * 100) if self.expected_total_results > 0 else 0
+            
+            print(f"\n📊 TOTAL RESULTS VALIDATION:")
+            print(f"   Expected from Scopus query: {self.expected_total_results:,}")
+            print(f"   Found in database: {actual_total:,}")
+            print(f"   Coverage: {coverage_percentage:.1f}%")
+            
+            if coverage_percentage >= 95:
+                print(f"   ✅ Excellent coverage")
+            elif coverage_percentage >= 80:
+                print(f"   ⚠️ Good coverage, some records missing")
+            else:
+                print(f"   🚨 Low coverage - significant data missing")
+            
+            validation_results['total_validation'] = {
+                'expected': self.expected_total_results,
+                'actual': actual_total,
+                'coverage_percentage': coverage_percentage
+            }
+        
+        # Look for per-year validation file
+        if hasattr(self, 'csv_path'):
+            # Try to find the per-year results file
+            base_dir = self.csv_path if self.csv_path.is_dir() else self.csv_path.parent
+            if base_dir.name == "RAW":
+                base_dir = base_dir.parent
+            
+            # Look for scopus_q_results_py.cv file
+            yearly_file = base_dir / "scopus_q_results_py.cv"
+            if not yearly_file.exists():
+                # Try .csv extension
+                yearly_file = base_dir / "scopus_q_results_py.csv"
+            
+            if yearly_file.exists():
+                print(f"\n📅 PER-YEAR VALIDATION:")
+                print(f"   Using validation file: {yearly_file.name}")
+                
+                try:
+                    # Read the CSV file
+                    yearly_expected = {}
+                    with open(yearly_file, 'r', encoding='utf-8') as f:
+                        import csv
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            if 'Year' in row and 'Documents' in row:
+                                try:
+                                    year = int(row['Year'])
+                                    documents = int(row['Documents'])
+                                    yearly_expected[year] = documents
+                                except ValueError:
+                                    continue
+                    
+                    if yearly_expected:
+                        # Get actual counts from database
+                        cursor.execute("""
+                            SELECT CAST(year as INTEGER) as year_int, COUNT(*) as count
+                            FROM papers 
+                            WHERE year IS NOT NULL 
+                                AND year != '' 
+                                AND year != 'null'
+                                AND year NOT LIKE '%null%'
+                            GROUP BY CAST(year as INTEGER)
+                            ORDER BY CAST(year as INTEGER) DESC
+                        """)
+                        actual_counts = dict(cursor.fetchall())
+                        
+                        print(f"\n   {'Year':<6} {'Expected':<10} {'Database':<10} {'Coverage':<10}")
+                        print(f"   {'-'*40}")
+                        
+                        yearly_validation = {}
+                        total_expected_from_csv = 0
+                        total_found_from_csv = 0
+                        
+                        for year in sorted(yearly_expected.keys(), reverse=True):
+                            expected = yearly_expected[year]
+                            found = actual_counts.get(year, 0)
+                            coverage = (found / expected * 100) if expected > 0 else 0
+                            
+                            total_expected_from_csv += expected
+                            total_found_from_csv += found
+                            
+                            status = "✅" if coverage >= 95 else "⚠️" if coverage >= 80 else "🚨"
+                            print(f"   {year:<6} {expected:<10,} {found:<10,} {coverage:<9.1f}% {status}")
+                            
+                            yearly_validation[str(year)] = {
+                                'expected': expected,
+                                'actual': found,
+                                'coverage_percentage': coverage
+                            }
+                        
+                        print(f"   {'-'*40}")
+                        total_coverage = (total_found_from_csv / total_expected_from_csv * 100) if total_expected_from_csv > 0 else 0
+                        print(f"   {'TOTAL':<6} {total_expected_from_csv:<10,} {total_found_from_csv:<10,} {total_coverage:<9.1f}%")
+                        
+                        validation_results['yearly_validation'] = yearly_validation
+                        validation_results['total_from_yearly'] = {
+                            'expected': total_expected_from_csv,
+                            'actual': total_found_from_csv,
+                            'coverage_percentage': total_coverage
+                        }
+                        
+                except Exception as e:
+                    print(f"   ⚠️ Error reading yearly validation file: {e}")
+            else:
+                print(f"   ℹ️ No per-year validation file found (looked for scopus_q_results_py.cv)")
+        
+        # Save validation report
+        if hasattr(self, 'data_filter') and self.data_filter and hasattr(self.data_filter, 'log_path'):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            validation_report_path = self.data_filter.log_path.parent / f"scopus_export_validation_{timestamp}.json"
+            
+            try:
+                with open(validation_report_path, 'w', encoding='utf-8') as f:
+                    json.dump(validation_results, f, indent=2, ensure_ascii=False)
+                print(f"\n   💾 Validation report saved: {validation_report_path.name}")
+            except Exception as e:
+                print(f"   ⚠️ Could not save validation report: {e}")
+        
+        print(f"\n" + "=" * 70)
 
 

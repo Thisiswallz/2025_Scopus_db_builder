@@ -84,6 +84,24 @@ class ConfigLoader:
                 "timeout_seconds": 30,
                 "retry_attempts": 3
             },
+            "lens": {
+                "enabled": False,
+                "api_token": None,
+                "rate_limit_requests_per_second": 10,
+                "timeout_seconds": 30,
+                "retry_attempts": 3,
+                "cache_ttl_days": 30,
+                "confidence_thresholds": {
+                    "author_match": 0.7,
+                    "institution_match": 0.6,
+                    "subject_match": 0.5
+                },
+                "phases": {
+                    "authors_enabled": True,
+                    "institutions_enabled": True,
+                    "subjects_enabled": False
+                }
+            },
             "data_quality": {
                 "filtering_enabled": True,
                 "generate_reports": True,
@@ -150,10 +168,18 @@ class ConfigLoader:
             config['crossref']['skip_confirmation'] = True
             print(f"🔗 CrossRef email set from environment: {config['crossref']['email']}")
         
+        # Lens API token
+        if os.environ.get('LENS_API'):
+            config['lens']['api_token'] = os.environ['LENS_API']
+            config['lens']['enabled'] = True
+            print(f"🔬 Lens API token configured from environment")
+        
         # Other environment overrides
         env_mappings = {
             'CROSSREF_ENABLED': ('crossref', 'enabled', self._parse_bool),
             'CROSSREF_SKIP_CONFIRMATION': ('crossref', 'skip_confirmation', self._parse_bool),
+            'LENS_ENABLED': ('lens', 'enabled', self._parse_bool),
+            'LENS_RATE_LIMIT': ('lens', 'rate_limit_requests_per_second', int),
             'DATA_FILTERING_ENABLED': ('data_quality', 'filtering_enabled', self._parse_bool),
             'VERBOSE_LOGGING': ('output', 'verbose_logging', self._parse_bool),
             'BATCH_SIZE': ('performance', 'batch_size', int),
@@ -185,9 +211,20 @@ class ConfigLoader:
             if '@' not in email or '.' not in email.split('@')[1]:
                 raise ConfigurationError(f"Invalid email format: {email}")
         
+        # Validate Lens API token if enabled
+        if config['lens']['enabled']:
+            api_token = config['lens']['api_token']
+            if not api_token:
+                raise ConfigurationError("Lens API is enabled but no token provided")
+            if len(api_token.strip()) < 10:
+                raise ConfigurationError("Lens API token appears to be invalid (too short)")
+        
         # Validate numeric values
         if config['crossref']['rate_limit_requests_per_second'] <= 0:
-            raise ConfigurationError("Rate limit must be positive")
+            raise ConfigurationError("CrossRef rate limit must be positive")
+        
+        if config['lens']['rate_limit_requests_per_second'] <= 0:
+            raise ConfigurationError("Lens rate limit must be positive")
         
         if config['performance']['batch_size'] <= 0:
             raise ConfigurationError("Batch size must be positive")
@@ -205,6 +242,10 @@ class ConfigLoader:
     def get_crossref_config(self) -> Dict[str, Any]:
         """Get CrossRef configuration."""
         return self.config['crossref']
+    
+    def get_lens_config(self) -> Dict[str, Any]:
+        """Get Lens configuration."""
+        return self.config['lens']
     
     def get_data_quality_config(self) -> Dict[str, Any]:
         """Get data quality configuration."""
@@ -234,6 +275,14 @@ class ConfigLoader:
         """Get CrossRef email address."""
         return self.config['crossref']['email']
     
+    def is_lens_enabled(self) -> bool:
+        """Check if Lens enrichment is enabled."""
+        return self.config['lens']['enabled'] and bool(self.config['lens']['api_token'])
+    
+    def get_lens_token(self) -> Optional[str]:
+        """Get Lens API token."""
+        return self.config['lens']['api_token']
+    
     def print_configuration_summary(self) -> None:
         """Print a summary of current configuration."""
         print("\n📋 CONFIGURATION SUMMARY")
@@ -247,9 +296,41 @@ class ConfigLoader:
             print(f"   🤖 Auto-confirm: {crossref['skip_confirmation']}")
             print(f"   ⚡ Rate limit: {crossref['rate_limit_requests_per_second']} req/sec")
         
+        # Lens settings
+        lens = self.config['lens']
+        print(f"🔬 Lens Enrichment: {'✅ Enabled' if self.is_lens_enabled() else '❌ Disabled'}")
+        if self.is_lens_enabled():
+            print(f"   🔑 API Token: {'***' + lens['api_token'][-4:] if lens['api_token'] else 'None'}")
+            print(f"   ⚡ Rate limit: {lens['rate_limit_requests_per_second']} req/sec")
+            enabled_phases = [k.replace('_enabled', '') for k, v in lens['phases'].items() if v]
+            print(f"   🎯 Phases: {', '.join(enabled_phases)}")
+        
         # Data quality settings
         dq = self.config['data_quality']
         print(f"🔍 Data Quality: {'✅ Enabled' if dq['filtering_enabled'] else '❌ Disabled'}")
+        required_fields = [k.replace('require_', '') for k, v in dq['quality_criteria'].items() if v]
+        print(f"   📋 Required fields: {', '.join(required_fields)}")
+        
+        # Output settings
+        output = self.config['output']
+        enabled_outputs = [k.replace('generate_', '').replace('_', ' ') for k, v in output.items() 
+                          if k.startswith('generate_') and v]
+        print(f"📊 Output formats: {', '.join(enabled_outputs)}")
+        
+        # Performance settings
+        perf = self.config['performance']
+        print(f"⚡ Performance: Batch size={perf['batch_size']}, Memory={perf['memory_limit_mb']}MB")
+        
+        print("=" * 50)
+    
+    def print_database_creation_summary(self) -> None:
+        """Print a simplified summary for database creation (no CrossRef)."""
+        print("\n📋 DATABASE CREATION CONFIGURATION")
+        print("=" * 50)
+        
+        # Data quality settings
+        dq = self.config['data_quality']
+        print(f"🔍 Data Quality Filtering: {'✅ Enabled' if dq['filtering_enabled'] else '❌ Disabled'}")
         required_fields = [k.replace('require_', '') for k, v in dq['quality_criteria'].items() if v]
         print(f"   📋 Required fields: {', '.join(required_fields)}")
         

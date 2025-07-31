@@ -1,0 +1,580 @@
+{
+  "target_paper": {
+    "title": "Rapid prototyping of microfluidic devices with a wax printer",
+    "doi": "10.1039/b617764f"
+  },
+  "analysis_date": "2025-07-29T19:16:40.813262",
+  "total_citing_patents": 11,
+  "patents": [
+    {
+      "lens_id": "017-287-187-825-975",
+      "doc_key": "US_8206664_B2_20120626",
+      "doc_number": "8206664",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2012-06-26",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Methods of producing multi-layered microfluidic devices",
+      "application_number": "83048910",
+      "filing_date": "2010-07-06",
+      "filing_jurisdiction": "US",
+      "priority_date": "2010-07-06",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "83048910",
+          "date": "2010-07-06"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "INACTIVE",
+      "family_id": "N/A",
+      "family_size": 2,
+      "citation_confirmed": true,
+      "citation_sequence": 2
+    },
+    {
+      "lens_id": "046-336-897-974-30X",
+      "doc_key": "US_11207455_B2_20211228",
+      "doc_number": "11207455",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2021-12-28",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Membrane device for blood separation and methods of making and using the same",
+      "application_number": "202016809312",
+      "filing_date": "2020-03-04",
+      "filing_jurisdiction": "US",
+      "priority_date": "2018-05-14",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "202016809312",
+          "date": "2020-03-04"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201916410637",
+          "date": "2019-05-13"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201862671281",
+          "date": "2018-05-14"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201962847064",
+          "date": "2019-05-13"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201962849636",
+          "date": "2019-05-17"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 2,
+      "citation_confirmed": true,
+      "citation_sequence": 44
+    },
+    {
+      "lens_id": "052-147-626-854-925",
+      "doc_key": "US_8999265_B2_20150407",
+      "doc_number": "8999265",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2015-04-07",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Bonding agent and device for use in microfluidics",
+      "application_number": "201213569723",
+      "filing_date": "2012-08-08",
+      "filing_jurisdiction": "US",
+      "priority_date": "2011-08-10",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "201213569723",
+          "date": "2012-08-08"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201161522060",
+          "date": "2011-08-10"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 2,
+      "citation_confirmed": true,
+      "citation_sequence": 20
+    },
+    {
+      "lens_id": "065-880-898-321-19X",
+      "doc_key": "US_9643152_B2_20170509",
+      "doc_number": "9643152",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2017-05-09",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Methods for the preparation of reaction vessels",
+      "application_number": "201314379105",
+      "filing_date": "2013-02-18",
+      "filing_jurisdiction": "US",
+      "priority_date": "2012-02-17",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "GB",
+          "number": "201202737",
+          "date": "2012-02-17"
+        },
+        {
+          "jurisdiction": "GB",
+          "number": "2013050389",
+          "date": "2013-02-18"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "GB"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "GB",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 9,
+      "citation_confirmed": true,
+      "citation_sequence": 10
+    },
+    {
+      "lens_id": "091-428-408-796-283",
+      "doc_key": "WO_2013121230_A1_20130822",
+      "doc_number": "2013121230",
+      "jurisdiction": "WO",
+      "kind": "A1",
+      "publication_date": "2013-08-22",
+      "publication_type": "PATENT_APPLICATION",
+      "title": "APPARATUS AND METHODS FOR THE PREPARATION OF REACTION VESSELS WITH A 3D -PRINTER",
+      "application_number": "2013050389",
+      "filing_date": "2013-02-18",
+      "filing_jurisdiction": "GB",
+      "priority_date": "2012-02-17",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "GB",
+          "number": "201202737",
+          "date": "2012-02-17"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "GB"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "GB",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "PENDING",
+      "family_id": "N/A",
+      "family_size": 9,
+      "citation_confirmed": true,
+      "citation_sequence": 2
+    },
+    {
+      "lens_id": "111-380-928-853-53X",
+      "doc_key": "US_8367020_B2_20130205",
+      "doc_number": "8367020",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2013-02-05",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Hydroxyl group-containing solid inks",
+      "application_number": "85087410",
+      "filing_date": "2010-08-05",
+      "filing_jurisdiction": "US",
+      "priority_date": "2010-08-05",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "85087410",
+          "date": "2010-08-05"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "INACTIVE",
+      "family_id": "N/A",
+      "family_size": 2,
+      "citation_confirmed": true,
+      "citation_sequence": 32
+    },
+    {
+      "lens_id": "118-753-311-742-841",
+      "doc_key": "US_8277032_B2_20121002",
+      "doc_number": "8277032",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2012-10-02",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Acidic group-containing solid inks",
+      "application_number": "85071110",
+      "filing_date": "2010-08-05",
+      "filing_jurisdiction": "US",
+      "priority_date": "2010-08-05",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "85071110",
+          "date": "2010-08-05"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "INACTIVE",
+      "family_id": "N/A",
+      "family_size": 2,
+      "citation_confirmed": true,
+      "citation_sequence": 32
+    },
+    {
+      "lens_id": "124-961-395-600-958",
+      "doc_key": "US_11311874_B2_20220426",
+      "doc_number": "11311874",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2022-04-26",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Polymer-based well plate devices and fluidic systems and methods of making and using the same",
+      "application_number": "201816001854",
+      "filing_date": "2018-06-06",
+      "filing_jurisdiction": "US",
+      "priority_date": "2017-06-07",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "201816001854",
+          "date": "2018-06-06"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201762516620",
+          "date": "2017-06-07"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "TH"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        },
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 2,
+      "citation_confirmed": true,
+      "citation_sequence": 41
+    },
+    {
+      "lens_id": "132-948-068-776-159",
+      "doc_key": "US_11389796_B2_20220719",
+      "doc_number": "11389796",
+      "jurisdiction": "US",
+      "kind": "B2",
+      "publication_date": "2022-07-19",
+      "publication_type": "GRANTED_PATENT",
+      "title": "Fluidic devices for chromatographic separation and methods of making and using the same",
+      "application_number": "201816201646",
+      "filing_date": "2018-11-27",
+      "filing_jurisdiction": "US",
+      "priority_date": "2016-05-31",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "US",
+          "number": "201816201646",
+          "date": "2018-11-27"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "2017035018",
+          "date": "2017-05-30"
+        },
+        {
+          "jurisdiction": "US",
+          "number": "201662343621",
+          "date": "2016-05-31"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        },
+        {
+          "name": "N/A",
+          "residence": "US"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "US",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 3,
+      "citation_confirmed": true,
+      "citation_sequence": 57
+    },
+    {
+      "lens_id": "165-282-105-576-842",
+      "doc_key": "EP_2814611_B1_20200617",
+      "doc_number": "2814611",
+      "jurisdiction": "EP",
+      "kind": "B1",
+      "publication_date": "2020-06-17",
+      "publication_type": "GRANTED_PATENT",
+      "title": "VORRICHTUNG UND VERFAHREN ZUM HERSTELLEN EINES REAKTIONSGEFÄSS DURCH EINEN 3D-DRUCKER",
+      "application_number": "13710521",
+      "filing_date": "2013-02-18",
+      "filing_jurisdiction": "EP",
+      "priority_date": "2012-02-17",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "GB",
+          "number": "201202737",
+          "date": "2012-02-17"
+        },
+        {
+          "jurisdiction": "GB",
+          "number": "2013050389",
+          "date": "2013-02-18"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "GB"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "GB",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 9,
+      "citation_confirmed": true,
+      "citation_sequence": "N/A"
+    },
+    {
+      "lens_id": "170-386-216-227-239",
+      "doc_key": "EP_2814611_B8_20200812",
+      "doc_number": "2814611",
+      "jurisdiction": "EP",
+      "kind": "B8",
+      "publication_date": "2020-08-12",
+      "publication_type": "AMENDED_PATENT",
+      "title": "VORRICHTUNG UND VERFAHREN ZUM HERSTELLEN EINES REAKTIONSGEFÄSS DURCH EINEN 3D-DRUCKER",
+      "application_number": "13710521",
+      "filing_date": "2013-02-18",
+      "filing_jurisdiction": "EP",
+      "priority_date": "2012-02-17",
+      "priority_jurisdiction": "N/A",
+      "priority_claims": [
+        {
+          "jurisdiction": "GB",
+          "number": "201202737",
+          "date": "2012-02-17"
+        },
+        {
+          "jurisdiction": "GB",
+          "number": "2013050389",
+          "date": "2013-02-18"
+        }
+      ],
+      "inventors": [
+        {
+          "name": "N/A",
+          "residence": "GB"
+        }
+      ],
+      "applicants": [
+        {
+          "name": "N/A",
+          "residence": "GB",
+          "type": "N/A"
+        }
+      ],
+      "legal_status": "ACTIVE",
+      "family_id": "N/A",
+      "family_size": 9,
+      "citation_confirmed": true,
+      "citation_sequence": "N/A"
+    }
+  ]
+}

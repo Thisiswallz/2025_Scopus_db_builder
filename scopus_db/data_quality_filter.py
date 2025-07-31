@@ -409,6 +409,12 @@ class ScopusDataQualityFilter:
                     self._initialize_crossref_client()
         
         for i, row in enumerate(csv_data, 1):
+            # Progress logging every 100 records
+            if i % 100 == 0:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"📊 Processing record {i:,} of {len(csv_data):,} ({i/len(csv_data)*100:.1f}%)")
+            
             # PHASE 1: Attempt CrossRef recovery before quality checks (if enabled)
             if self.enable_crossref_recovery and self.crossref_client:
                 row = self._attempt_crossref_recovery(row)
